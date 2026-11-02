@@ -4,17 +4,19 @@ This setup is isolated to the dedicated ResolveAI database. Never select, rename
 
 ## Dedicated database
 
-The Cloudflare Worker configuration now binds `DB` to the dedicated database `resolveai-db`. The configured database ID is the one created for ResolveAI.
+The Cloudflare Worker configuration binds `DB` to the dedicated database `resolveai-db` using the database created for ResolveAI.
 
-## Apply database migrations
+## Schema initialization
 
-After the `DB` binding is available, run both migrations against the dedicated database, in order:
+After the `DB` binding is available, the Worker creates the required tables and indexes idempotently on the first private-app request. This bootstrap runs only against the `DB` binding configured for `resolveai-db`.
+
+For an explicit migration ledger or manual schema setup, run this command from the repository root:
 
 ```bash
 npx wrangler d1 migrations apply resolveai-db --remote
 ```
 
-The migrations create users, workspaces, team membership, hashed-password session storage, conversations, messages, and one-time team invitations. The command must target exactly `resolveai-db`.
+The command is optional when automatic schema initialization has already created the tables. It must target exactly `resolveai-db`, never `block17-db`.
 
 ## Enable first-owner setup
 
