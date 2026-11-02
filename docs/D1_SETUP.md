@@ -1,35 +1,36 @@
-# ResolveAI D1 database setup
+# ResolveAI private workspace database setup
 
-This setup is intentionally isolated to a **new database dedicated to ResolveAI**.
-Never select, rename, migrate, or reuse the existing `block17-db` database.
+This setup is isolated to the dedicated ResolveAI database. Never select, rename, migrate, or reuse `block17-db`.
 
-## 1. Create a dedicated database
+## Dedicated database
 
-In Cloudflare Dashboard, open **Workers & Pages → D1 SQL Database → Create database**.
-Use the name `resolveai-db`. Do not choose an existing database.
+The Cloudflare Worker configuration now binds `DB` to the dedicated database `resolveai-db`. The configured database ID is the one created for ResolveAI.
 
-## 2. Add the Worker binding
+## Apply database migrations
 
-Open **Workers & Pages → resolveai → Settings → Bindings → Add → D1 database**.
-Set the variable name to `DB` and select only the newly created `resolveai-db`.
-Save and deploy the `resolveai` Worker.
-
-The repository does not contain a database ID yet, and no binding is active until this step is completed.
-
-## 3. Apply the schema
-
-From the repository root, after installing Wrangler and authenticating the Cloudflare account:
+After the `DB` binding is available, run both migrations against the dedicated database, in order:
 
 ```bash
 npx wrangler d1 migrations apply resolveai-db --remote
 ```
 
-The migration is in `migrations/0001_initial.sql`. It creates isolated tables for users, workspaces, memberships, sessions, conversations, and messages, plus lookup indexes.
+The migrations create users, workspaces, team membership, hashed-password session storage, conversations, messages, and one-time team invitations. The command must target exactly `resolveai-db`.
 
-## Important security status
+## Enable first-owner setup
 
-- This migration is a data-model foundation, not a complete authentication implementation.
-- Password columns are reserved for a future password-hashing implementation; never store plaintext passwords.
-- Email verification, account recovery, session issuance/revocation, authorization checks, and API persistence routes must be implemented and tested before real customer data is used.
-- Do not put real customer data into the current demo.
-- No command in this guide targets or changes `block17` or `block17-db`.
+In Cloudflare Dashboard, open **Workers & Pages → resolveai → Settings → Variables and secrets**. Add a secret named `RESOLVEAI_SETUP_TOKEN` with a long, random value. Do not share this value in chat or screenshots.
+
+The first person to open the private app completes the one-time owner setup using that secret. Once the first account exists, setup is permanently closed. Public registration is disabled.
+
+## Invite teammates
+
+After signing in as owner or admin, open **Team**, create an invitation for a specific email and role, and share the generated one-time link privately. Invitations expire after seven days. Available roles are admin, agent, and viewer.
+
+## Security notes
+
+- Passwords are stored as PBKDF2-SHA-256 hashes with per-user random salts, never as plaintext.
+- Sessions use random opaque tokens; only token hashes are stored in D1. Session cookies are HttpOnly, Secure, and SameSite=Lax.
+- The app disables service-worker caching to avoid retaining private workspace pages on shared devices.
+- Initial setup requires the Cloudflare secret and can only happen while the users table is empty.
+- This is the first private-access foundation. Conversation persistence, full role enforcement on every workspace action, password reset, email delivery/verification, audit logs, and production security review remain follow-up work. Do not store real customer conversations until those are implemented and tested.
+- Never use the Block 17 Worker or database for ResolveAI.
