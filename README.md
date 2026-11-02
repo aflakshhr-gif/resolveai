@@ -22,7 +22,7 @@ The Next.js static export is written to `out/`. The PWA service worker and offli
 
 ## Deploy to Cloudflare Workers
 
-The repository includes `wrangler.jsonc`, configured to serve the static export from `out/` as the separate Worker named `resolveai`.
+The repository includes `wrangler.jsonc` and `worker.js`. The Worker serves the static export from `out/` and handles the same-origin `/api/ai` endpoint. Set the `OPENAI_API_KEY` secret on the `resolveai` Worker before using live AI.
 
 In Cloudflare Workers Builds, use:
 
@@ -38,6 +38,6 @@ The single shared Android / iOS app lives in `mobile/`. See [mobile/README.md](m
 
 ## Important prototype limitations
 
-The current inbox, conversations, analytics, contacts and AI Copilot use local sample data. Replies and status changes are only stored in browser memory. There is no live authentication, shared database, customer messaging provider, push notification service, or real AI integration yet. The mobile app is also a UI prototype and is not yet connected to a production backend.
+The inbox, conversations, analytics and contacts still use local sample data; replies and status changes are only stored in browser memory. The AI Copilot can call the OpenAI Responses API through the Worker when the `OPENAI_API_KEY` secret is configured. The public demo does not yet have user authentication or durable rate limiting, so do not expose it to real customer traffic or sensitive data. There is no shared database, customer messaging provider or push notification service yet. The mobile app is also a UI prototype and is not yet connected to a production backend.
 
 Do not use this prototype to handle real customer data until authentication, authorization, persistence, privacy controls, monitoring and real integrations have been implemented and tested. Never expose API keys in client-side code.
