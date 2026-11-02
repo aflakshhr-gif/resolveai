@@ -1,5 +1,5 @@
-const CACHE_NAME = "resolveai-shell-v1";
-const OFFLINE_URL = "/offline";
+const CACHE_NAME = "resolveai-shell-v2";
+const OFFLINE_URL = "/offline/";
 
 self.addEventListener("install", event => {
   event.waitUntil(
