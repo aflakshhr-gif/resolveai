@@ -89,6 +89,7 @@ const allowedOrigin = r => !r.headers.get("Origin") || r.headers.get("Origin")==
 async function body(r){try{return await r.json()}catch{return null}}
 async function sessionFor(request,env) {
   if(!env.DB)return null;
+  await ensureSchema(env);
   const token=getCookie(request); if(!token||token.length>200)return null;
   return await env.DB.prepare(`SELECT u.id AS user_id,u.email,w.id AS workspace_id,w.name AS workspace_name,wm.role
     FROM sessions s JOIN users u ON u.id=s.user_id JOIN workspace_members wm ON wm.user_id=u.id
@@ -104,6 +105,7 @@ async function newSession(env,userId) {
 async function auth(request,env,path) {
   if(path==="/api/auth/status"&&request.method==="GET"){
     if(!env.DB)return json({error:"Database binding DB is not configured."},503);
+    await ensureSchema(env);
     const n=await env.DB.prepare("SELECT COUNT(*) AS total FROM users").first();
     return json({setup_required:Number(n?.total||0)===0,setup_enabled:Boolean(env.RESOLVEAI_SETUP_TOKEN)});
   }
@@ -113,6 +115,7 @@ async function auth(request,env,path) {
     return json({ok:true},200,{"set-cookie":cookie("",0)});
   }
   if(!env.DB)return json({error:"Database binding DB is not configured."},503);
+  await ensureSchema(env);
   if(path==="/api/auth/setup"&&request.method==="POST"){
     if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
     if(!env.RESOLVEAI_SETUP_TOKEN)return json({error:"Set the RESOLVEAI_SETUP_TOKEN secret before initial setup."},503);
