@@ -107,11 +107,11 @@ export default function Home() {
       setDraft(""); flash("Reply saved to the workspace");
     } catch (reason) { flash(reason instanceof Error ? reason.message : "Reply could not be saved."); }
   }
-  const nav = [{ label: "Workspace", items: [{ name: "Overview", icon: LayoutDashboard }, { name: "Inbox", icon: Inbox }, { name: "Contacts", icon: Users }, { name: "Knowledge base", icon: BookOpen }] }, { label: "Manage", items: [{ name: "Analytics", icon: Activity }, { name: "Team", icon: Users }] }];
+  const nav = [{ label: "Workspace", items: [{ name: "Inbox", icon: Inbox }] }, { label: "Manage", items: [{ name: "Team", icon: Users }] }];
   return <main className="app-shell">
     <aside className="sidebar"><div className="brand"><span className="brand-mark"><LifeBuoy size={19}/></span><b>resolve<span>ai</span></b></div><button className="workspace-switch"><span className="workspace-avatar">{workspaceName.slice(0,1).toUpperCase()}</span><span><b>{workspaceName}</b><small>Private workspace</small></span><ChevronDown size={15}/></button>
       {nav.map(group => <div className="nav-group" key={group.label}><div className="nav-label">{group.label}</div>{group.items.map(item => <button key={item.name} className={section === item.name ? "nav-item active" : "nav-item"} onClick={() => setSection(item.name)}><item.icon size={17}/>{item.name}</button>)}</div>)}
-      <div className="nav-group"><div className="nav-label">Preferences</div><button className={section === "Settings" ? "nav-item active" : "nav-item"} onClick={() => setSection("Settings")}><Settings size={17}/>Settings</button></div>
+      
       <div className="sidebar-bottom"><div className="usage-card"><b><Sparkles size={13}/> Private workspace</b><small>Team-only access is enabled</small></div><div className="user-row"><div className="avatar">{userEmail.slice(0,2).toUpperCase()}</div><span><b>{userEmail}</b><small>{userRole}</small></span><MoreHorizontal size={17}/></div></div>
     </aside>
     <section className="main-area"><header className="topbar"><div className="breadcrumbs">Workspace <ChevronRight size={14}/><b>{section}</b></div><div className="top-actions"><label className="search-global"><Search size={15}/><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search conversations..."/></label><button className="icon-btn" onClick={() => flash("You're all caught up")}><Bell size={18}/></button><button className="outline-btn" onClick={async()=>{await fetch("/api/auth/logout",{method:"POST"});window.location.href="/login/";}}>Sign out</button><div className="avatar">JD</div></div></header>
