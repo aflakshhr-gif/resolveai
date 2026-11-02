@@ -118,6 +118,16 @@ async function analyze(request, env) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname === "/api/health") {
+      if (request.method !== "GET") {
+        return json({ error: "Method not allowed." }, 405);
+      }
+      return json({
+        service: "ResolveAI",
+        status: "ok",
+        ai_configured: Boolean(env.OPENAI_API_KEY),
+      });
+    }
     if (url.pathname === "/api/ai") {
       return analyze(request, env);
     }
