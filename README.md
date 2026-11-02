@@ -1,18 +1,43 @@
 # ResolveAI
 
-A polished customer support dashboard starter built with Next.js 14, TypeScript, Tailwind CSS and Lucide icons.
+ResolveAI is a customer-support dashboard prototype with a responsive web interface and a shared Expo / React Native mobile app.
 
-## Run locally
+## Run the web app locally
+
 ```bash
 npm install
 npm run dev
 ```
+
 Open http://localhost:3000.
 
-## Deploy to Vercel
-1. Create a new GitHub repository and upload this project.
-2. In Vercel, choose **Add New → Project** and import that repository.
-3. Keep the detected Next.js settings and click **Deploy**.
+## Build the web PWA
 
-## Demo limitations
-All conversations, analytics, contacts, articles and AI copilot actions use local demo data. No live AI API, email provider, database or authentication is connected. The AI copilot is deliberately labeled as a demo. For production, add server-side API routes, authentication, a database and environment variables. Never expose API keys in client-side code.
+```bash
+npm install
+npm run build
+```
+
+The Next.js static export is written to `out/`. The PWA service worker and offline page are included in the export.
+
+## Deploy to Cloudflare Workers
+
+The repository includes `wrangler.jsonc`, configured to serve the static export from `out/` as the separate Worker named `resolveai`.
+
+In Cloudflare Workers Builds, use:
+
+- Build command: `npm run build`
+- Deploy command: `npx wrangler deploy`
+- Preview command: `npx wrangler dev`
+
+The Cloudflare account must be connected and authorized to deploy this Worker. Do not change or reuse any unrelated Worker or database.
+
+## Mobile app
+
+The single shared Android / iOS app lives in `mobile/`. See [mobile/README.md](mobile/README.md) for Expo development and EAS build instructions.
+
+## Important prototype limitations
+
+The current inbox, conversations, analytics, contacts and AI Copilot use local sample data. Replies and status changes are only stored in browser memory. There is no live authentication, shared database, customer messaging provider, push notification service, or real AI integration yet. The mobile app is also a UI prototype and is not yet connected to a production backend.
+
+Do not use this prototype to handle real customer data until authentication, authorization, persistence, privacy controls, monitoring and real integrations have been implemented and tested. Never expose API keys in client-side code.

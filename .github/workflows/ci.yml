@@ -7,16 +7,17 @@ on:
 
 jobs:
   web:
-    name: Web typecheck and production build
+    name: Web typecheck, static export and Workers dry run
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - run: npm install
       - run: npx tsc --noEmit
       - run: npm run build
+      - run: npx --yes wrangler@latest deploy --dry-run
 
   mobile:
     name: Expo mobile validation
