@@ -1,8 +1,8 @@
-# ResolveAI Mobile
+# ResolveAI — One cross-platform mobile app
 
-A cross-platform Android and iOS companion app built with Expo / React Native.
+ResolveAI is **one mobile application built from one shared React Native / Expo codebase** for Android phones, iPhones, and iPads. Android and iOS are build targets of this same app, not separate products.
 
-## Run locally
+## Run the app
 
 ```bash
 cd mobile
@@ -10,22 +10,42 @@ npm install
 npx expo start
 ```
 
-Scan the Expo Go QR code with Expo Go on a phone, or press `a` / `i` to launch an installed emulator.
+Install Expo Go on a test phone and scan the development QR code, or run `npx expo start --android` / `npx expo start --ios`.
 
-## Build installable apps
+## Build both platforms from the same project
 
-Configure an Expo account and EAS Build, then:
+Install and configure EAS Build:
 
 ```bash
 npm install -g eas-cli
 eas login
 eas build:configure
-eas build --platform android
-eas build --platform ios
 ```
 
-Store publication requires the relevant Google Play Console / Apple Developer accounts and credentials.
+Android installable test build (APK):
 
-## Current limitations
+```bash
+eas build --platform android --profile preview
+```
 
-This is a functional UI prototype with local demo conversations. It does not yet connect to the website database, authentication, or a live AI/support API. Those require a shared backend and service credentials.
+Android store build (AAB):
+
+```bash
+eas build --platform android --profile production
+```
+
+iPhone / iOS build (IPA):
+
+```bash
+eas build --platform ios --profile production
+```
+
+## Store release
+
+- Google Play publication requires a Google Play Console developer account and store listing assets.
+- iOS distribution / App Store publication requires an Apple Developer account, app identifiers, signing, privacy details, and App Store Connect setup.
+- These builds have not yet been generated or submitted to either store.
+
+## Current implementation status
+
+The app currently contains the ResolveAI support inbox UI with sample local conversations. It is a prototype: authentication, live shared backend/database, push notifications, and real AI responses still need implementation and production credentials. Do not treat sample data or demo replies as live customer support.
