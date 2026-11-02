@@ -59,7 +59,7 @@ export default function Home() {
       id: String(item.id),
       name: item.customer_name,
       email: item.customer_email || "",
-      initials: String(item.customer_name || "?").split(/\\s+/).slice(0,2).map((part: string) => part[0] || "").join("").toUpperCase(),
+      initials: String(item.customer_name || "?").split(/\s+/).slice(0,2).map((part: string) => part[0] || "").join("").toUpperCase(),
       subject: item.subject,
       preview: item.preview || "",
       time: item.updated_at ? new Date(item.updated_at).toLocaleString() : "",
