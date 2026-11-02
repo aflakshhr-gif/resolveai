@@ -276,9 +276,13 @@ export default {
       if(path==="/api/conversations"||path.startsWith("/api/conversations/"))return conversationsApi(request,env,session,path);
       return json({error:"Not found."},404);
     }
+    if(path==="/login"){
+      const session=await sessionFor(request,env);
+      return session?Response.redirect(new URL("/",request.url),302):env.ASSETS.fetch(request);
+    }
+    if(publicAsset(path))return env.ASSETS.fetch(request);
     const session=await sessionFor(request,env);
-    if(path==="/login")return session?Response.redirect(new URL("/",request.url),302):env.ASSETS.fetch(request);
-    if(!publicAsset(path)&&!session)return Response.redirect(new URL("/login/",request.url),302);
+    if(!session)return Response.redirect(new URL("/login/",request.url),302);
     return env.ASSETS.fetch(request);
   }
 };
