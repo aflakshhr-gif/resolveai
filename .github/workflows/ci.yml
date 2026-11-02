@@ -6,6 +6,14 @@ on:
   pull_request:
 
 jobs:
+  resolveai-smoke-script:
+    name: ResolveAI smoke-test script validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate smoke-test shell syntax
+        run: bash -n scripts/check-resolveai.sh
+
   web:
     name: Web typecheck, static export and Workers dry run
     runs-on: ubuntu-latest
