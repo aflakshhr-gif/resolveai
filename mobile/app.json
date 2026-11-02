@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "ResolveAI",
+    "slug": "resolveai-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#f7f8fc"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.resolveai.support"
+    },
+    "android": {
+      "package": "com.resolveai.support",
+      "adaptiveIcon": {
+        "backgroundColor": "#635bff"
+      }
+    },
+    "plugins": [],
+    "extra": {
+      "websiteUrl": ""
+    }
+  }
+}
