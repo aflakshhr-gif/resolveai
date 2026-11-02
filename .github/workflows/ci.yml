@@ -11,11 +11,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Validate Worker JavaScript syntax
+        run: node --check worker.js
       - name: Validate smoke-test shell syntax
         run: bash -n scripts/check-resolveai.sh
-      - name: Validate dedicated D1 schema migration
+      - name: Validate dedicated D1 schema migrations
         run: |
-          sqlite3 :memory: < migrations/0001_initial.sql
+          cat migrations/0001_initial.sql migrations/0002_team_invites.sql | sqlite3 :memory:
           test "$(sqlite3 :memory: 'SELECT 1')" = "1"
 
   web:

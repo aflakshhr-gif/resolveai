@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   title: "ResolveAI — Customer Support",
   description: "A calmer way to support every customer.",
   applicationName: "ResolveAI",
+  robots: { index: false, follow: false },
   manifest: "/manifest.webmanifest",
   icons: { icon: "/icon.svg" }
 };
