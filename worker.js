@@ -126,7 +126,7 @@ async function auth(request,env,path) {
     if(Number(count?.total||0)!==0)return json({error:"Initial setup has already been completed."},409);
     const id=crypto.randomUUID(),wid=crypto.randomUUID(),pw=await passwordHash(b.password);
     await env.DB.batch([
-      env.DB.prepare("INSERT INTO users (id,email,password_hash,password_salt,email_verified_at) VALUES (?,?,?,?,?)").bind(id,b.email.trim().toLowerCase(),pw.hash,pw.salt,new Date().toISOString()),
+      env.DB.prepare("INSERT INTO users (id,email,password_hash,password_salt) VALUES (?,?,?,?)").bind(id,b.email.trim().toLowerCase(),pw.hash,pw.salt),
       env.DB.prepare("INSERT INTO workspaces (id,name,owner_user_id) VALUES (?,?,?)").bind(wid,(b.workspace_name||"My team").toString().slice(0,80),id),
       env.DB.prepare("INSERT INTO workspace_members (workspace_id,user_id,role) VALUES (?,?,'owner')").bind(wid,id)
     ]);
@@ -156,7 +156,7 @@ async function auth(request,env,path) {
     if(exists)return json({error:"This email already has an account. Please sign in."},409);
     const id=crypto.randomUUID(),pw=await passwordHash(b.password);
     await env.DB.batch([
-      env.DB.prepare("INSERT INTO users (id,email,password_hash,password_salt,email_verified_at) VALUES (?,?,?,?,?)").bind(id,b.email.trim().toLowerCase(),pw.hash,pw.salt,new Date().toISOString()),
+      env.DB.prepare("INSERT INTO users (id,email,password_hash,password_salt) VALUES (?,?,?,?)").bind(id,b.email.trim().toLowerCase(),pw.hash,pw.salt),
       env.DB.prepare("INSERT INTO workspace_members (workspace_id,user_id,role) VALUES (?,?,?)").bind(inv.workspace_id,id,inv.role),
       env.DB.prepare("UPDATE team_invites SET accepted_at=? WHERE id=? AND accepted_at IS NULL").bind(new Date().toISOString(),inv.id)
     ]);
