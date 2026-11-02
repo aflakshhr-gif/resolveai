@@ -291,6 +291,6 @@ export default {
     if(publicAsset(path))return env.ASSETS.fetch(request);
     const session=await sessionFor(request,env);
     if(!session)return Response.redirect(new URL("/login/",request.url),302);
-    return env.ASSETS.fetch(request);
+    return securePage(await env.ASSETS.fetch(request));
   }
 };
