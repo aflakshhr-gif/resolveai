@@ -14,7 +14,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
       - run: npm install
       - run: npx tsc --noEmit
       - run: npm run build
@@ -31,4 +30,5 @@ jobs:
         with:
           node-version: 20
       - run: npm install
-      - run: npx expo export --platform web
+      - run: npx expo export --platform android
+      - run: npx expo export --platform ios
