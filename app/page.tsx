@@ -34,7 +34,12 @@ export default function Home() {
   const [tickets, setTickets] = useState<Ticket[]>(initialTickets);
   const [selected, setSelected] = useState("");
   const [loadingTickets, setLoadingTickets] = useState(true);
-  const [apiError, setApiError] = useState("");\n  const [showNewConversation, setShowNewConversation] = useState(false);\n  const [customerName, setCustomerName] = useState("");\n  const [customerEmail, setCustomerEmail] = useState("");\n  const [newSubject, setNewSubject] = useState("");\n  const [firstMessage, setFirstMessage] = useState("");
+  const [apiError, setApiError] = useState("");
+  const [showNewConversation, setShowNewConversation] = useState(false);
+  const [customerName, setCustomerName] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
+  const [newSubject, setNewSubject] = useState("");
+  const [firstMessage, setFirstMessage] = useState("");
   const [filter, setFilter] = useState("All");
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState("");
