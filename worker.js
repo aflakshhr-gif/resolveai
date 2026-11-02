@@ -197,6 +197,7 @@ async function analyze(request) {
   return json(analyzeOffline(subject,messages));
 }
 async function conversationsApi(request, env, session, path) {
+  if (request.method !== "GET" && !allowedOrigin(request)) return json({ error: "Origin not allowed." },403);
   const base = "/api/conversations";
   if (path === base && request.method === "GET") {
     const result = await env.DB.prepare(`SELECT c.id,c.customer_name,c.customer_email,c.subject,c.status,c.tag,c.created_at,c.updated_at,
