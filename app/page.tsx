@@ -3,7 +3,9 @@
 import { useMemo, useState } from "react";
 import { Activity, Bell, BookOpen, Check, ChevronDown, ChevronRight, Inbox, LayoutDashboard, LifeBuoy, MessageCircle, MoreHorizontal, Search, Send, Settings, Sparkles, Users } from "lucide-react";
 
-type AiInsight = { sentiment: string; urgency: string; intent: string; suggested_reply: string; next_step: string };\n\ntype Ticket = { id: number; name: string; email: string; initials: string; subject: string; preview: string; time: string; status: "Open" | "Pending" | "Resolved"; tag: string; messages: { from: "customer" | "agent"; text: string; time: string }[] };
+type AiInsight = { sentiment: string; urgency: string; intent: string; suggested_reply: string; next_step: string };
+
+type Ticket = { id: number; name: string; email: string; initials: string; subject: string; preview: string; time: string; status: "Open" | "Pending" | "Resolved"; tag: string; messages: { from: "customer" | "agent"; text: string; time: string }[] };
 
 const initialTickets: Ticket[] = [
   { id: 1, name: "Olivia Rhye", email: "olivia@acme.co", initials: "OR", subject: "Issue with my recent order", preview: "I haven't received a tracking update yet...", time: "2m", status: "Open", tag: "Shipping", messages: [{ from: "customer", text: "Hi team, I placed an order three days ago and haven't received a tracking update yet. Could you help me check what's happening?", time: "10:42 AM" }, { from: "agent", text: "Hi Olivia! Thanks for reaching out. I'm happy to look into this for you.", time: "10:46 AM" }] },
@@ -21,11 +23,24 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState("");
   const [section, setSection] = useState("Inbox");
-  const [notice, setNotice] = useState("");\n  const [aiLoading, setAiLoading] = useState(false);\n  const [aiInsight, setAiInsight] = useState<AiInsight | null>(null);\n  const [aiError, setAiError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiInsight, setAiInsight] = useState<AiInsight | null>(null);
+  const [aiError, setAiError] = useState("");
   const active = tickets.find(t => t.id === selected) ?? tickets[0];
   const filtered = useMemo(() => tickets.filter(t => (filter === "All" || t.status === filter) && (!query || [t.name, t.subject, t.preview].some(v => v.toLowerCase().includes(query.toLowerCase())))), [tickets, filter, query]);
   function flash(message: string) { setNotice(message); window.setTimeout(() => setNotice(""), 2200); }
-  async function analyzeConversation() {\n    setAiLoading(true); setAiError(""); setAiInsight(null);\n    try {\n      const response = await fetch("/api/ai", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subject: active.subject, messages: active.messages }) });\n      const data = await response.json();\n      if (!response.ok) throw new Error(data.error || "AI analysis failed.");\n      setAiInsight(data as AiInsight);\n    } catch (error) { setAiError(error instanceof Error ? error.message : "AI analysis failed."); }\n    finally { setAiLoading(false); }\n  }\n  function sendReply() {
+  async function analyzeConversation() {
+    setAiLoading(true); setAiError(""); setAiInsight(null);
+    try {
+      const response = await fetch("/api/ai", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subject: active.subject, messages: active.messages }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "AI analysis failed.");
+      setAiInsight(data as AiInsight);
+    } catch (error) { setAiError(error instanceof Error ? error.message : "AI analysis failed."); }
+    finally { setAiLoading(false); }
+  }
+  function sendReply() {
     if (!draft.trim()) return;
     setTickets(old => old.map(t => t.id === selected ? { ...t, status: "Pending", preview: draft, messages: [...t.messages, { from: "agent", text: draft.trim(), time: "Now" }] } : t));
     setDraft(""); flash("Reply added to this demo conversation");
