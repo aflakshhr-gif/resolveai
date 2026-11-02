@@ -68,7 +68,11 @@ async function auth(request,env,path) {
     if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
     const b=await body(request);
     if(!b||!validEmail(b.email)||typeof b.password!=="string")return json({error:"Enter your email and password."},400);
-    const ip=request.headers.get("CF-Connecting-IP")||"unknown",key="login:"+ip+":"+b.email.trim().toLowerCase(),now=Date.now();\n    const attempts=(requestWindows.get(key)||[]).filter(t=>now-t<60000);\n    if(attempts.length>=10)return json({error:"Too many sign-in attempts. Wait a minute and try again."},429);\n    attempts.push(now);requestWindows.set(key,attempts);\n    const u=await env.DB.prepare("SELECT id,password_hash,password_salt FROM users WHERE email=? COLLATE NOCASE").bind(b.email.trim()).first();
+    const ip=request.headers.get("CF-Connecting-IP")||"unknown",key="login:"+ip+":"+b.email.trim().toLowerCase(),now=Date.now();
+    const attempts=(requestWindows.get(key)||[]).filter(t=>now-t<60000);
+    if(attempts.length>=10)return json({error:"Too many sign-in attempts. Wait a minute and try again."},429);
+    attempts.push(now);requestWindows.set(key,attempts);
+    const u=await env.DB.prepare("SELECT id,password_hash,password_salt FROM users WHERE email=? COLLATE NOCASE").bind(b.email.trim()).first();
     if(!u)return json({error:"Email or password is incorrect."},401);
     const pw=await passwordHash(b.password,u.password_salt);
     if(!equal(pw.hash,u.password_hash))return json({error:"Email or password is incorrect."},401);
