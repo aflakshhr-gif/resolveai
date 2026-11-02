@@ -32,6 +32,10 @@ In Cloudflare Workers Builds, use:
 
 The Cloudflare account must be connected and authorized to deploy this Worker. Do not change or reuse any unrelated Worker or database.
 
+## Dedicated D1 database foundation
+
+A first database migration is available at `migrations/0001_initial.sql`. It defines isolated tables for users, workspaces, memberships, sessions, conversations and messages. Follow [docs/D1_SETUP.md](docs/D1_SETUP.md) to create a **new `resolveai-db` database** and bind it to the `resolveai` Worker. Never use `block17-db`. The migration is only a schema foundation: authentication, email verification, authorization and persistent API routes are not yet complete, so this does not make the demo safe for real customer data.
+
 ## Mobile app
 
 The single shared Android / iOS app lives in `mobile/`. See [mobile/README.md](mobile/README.md) for Expo development and EAS build instructions.
