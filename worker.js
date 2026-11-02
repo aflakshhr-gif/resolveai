@@ -216,7 +216,7 @@ export default {
           .bind(crypto.randomUUID(),session.workspace_id,email.trim().toLowerCase(),role,await digest(token),expires,session.user_id).run();
         return json({ok:true,invite_url:new URL("/login/?invite="+encodeURIComponent(token),request.url).toString(),expires_at:expires},201);
       }
-      if(path==="/api/ai")return analyze(request);
+      if(path==="/api/ai")return analyze(request);\n      if(path==="/api/conversations"||path.startsWith("/api/conversations/"))return conversationsApi(request,env,session,path);
       return json({error:"Not found."},404);
     }
     const session=await sessionFor(request,env);
