@@ -252,6 +252,14 @@ async function conversationsApi(request, env, session, path) {
   return json({error:"Not found."},404);
 }
 
+function securePage(response) {
+  const headers=new Headers(response.headers);
+  headers.set("cache-control","no-store");
+  headers.set("x-frame-options","DENY");
+  headers.set("x-content-type-options","nosniff");
+  headers.set("referrer-policy","strict-origin-when-cross-origin");
+  return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
+}
 function publicAsset(path) { return path.startsWith("/_next/")||["/icon.svg","/manifest.webmanifest","/sw.js","/favicon.ico"].includes(path)||/\.(png|jpg|jpeg|svg|webp|ico|css|js|woff2?)$/i.test(path); }
 export default {
   async fetch(request,env) {
@@ -278,7 +286,7 @@ export default {
     }
     if(path==="/login"){
       const session=await sessionFor(request,env);
-      return session?Response.redirect(new URL("/",request.url),302):env.ASSETS.fetch(request);
+      return session?Response.redirect(new URL("/",request.url),302):securePage(await env.ASSETS.fetch(request));
     }
     if(publicAsset(path))return env.ASSETS.fetch(request);
     const session=await sessionFor(request,env);
