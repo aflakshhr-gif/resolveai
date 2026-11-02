@@ -34,5 +34,6 @@ After signing in as owner or admin, open **Team**, create an invitation for a sp
 - Sessions use random opaque tokens; only token hashes are stored in D1. Session cookies are HttpOnly, Secure, and SameSite=Lax.
 - The app disables service-worker caching to avoid retaining private workspace pages on shared devices.
 - Initial setup requires the Cloudflare secret and can only happen while the users table is empty.
-- Conversation records and agent replies are persisted in the workspace database and are scoped to the signed-in workspace. The inbox currently supports manual conversation creation; external email/chat ingestion and outbound customer delivery are not connected yet.\n- Password reset, email delivery/verification, audit logs, and a full production security review remain follow-up work. Do not use the app for regulated or highly sensitive customer data until those are implemented and tested.
+- Conversation records and agent replies are persisted in the workspace database and are scoped to the signed-in workspace. The inbox currently supports manual conversation creation; external email/chat ingestion and outbound customer delivery are not connected yet.
+- Password reset, email delivery/verification, audit logs, and a full production security review remain follow-up work. Do not use the app for regulated or highly sensitive customer data until those are implemented and tested.
 - Never use the Block 17 Worker or database for ResolveAI.
