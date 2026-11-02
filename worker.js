@@ -196,6 +196,61 @@ async function analyze(request) {
   if(!messages.length)return json({error:"The conversation has no readable messages."},400);
   return json(analyzeOffline(subject,messages));
 }
+async function conversationsApi(request, env, session, path) {
+  const base = "/api/conversations";
+  if (path === base && request.method === "GET") {
+    const result = await env.DB.prepare(`SELECT c.id,c.customer_name,c.customer_email,c.subject,c.status,c.tag,c.created_at,c.updated_at,
+      (SELECT body FROM messages m WHERE m.conversation_id=c.id ORDER BY m.created_at DESC LIMIT 1) AS preview
+      FROM conversations c WHERE c.workspace_id=? ORDER BY c.updated_at DESC LIMIT 200`).bind(session.workspace_id).all();
+    const conversations = await Promise.all((result.results || []).map(async row => {
+      const messages = await env.DB.prepare("SELECT id,author_type,author_user_id,body,created_at FROM messages WHERE conversation_id=? ORDER BY created_at ASC LIMIT 500").bind(row.id).all();
+      return { ...row, messages: messages.results || [] };
+    }));
+    return json({ conversations });
+  }
+  if (path === base && request.method === "POST") {
+    if (!["owner","admin","agent"].includes(session.role)) return json({error:"You do not have permission to create conversations."},403);
+    const b=await body(request);
+    if(!b||typeof b.customer_name!=="string"||!b.customer_name.trim()||typeof b.subject!=="string"||!b.subject.trim())return json({error:"Customer name and subject are required."},400);
+    const id=crypto.randomUUID(),now=new Date().toISOString();
+    await env.DB.prepare("INSERT INTO conversations (id,workspace_id,customer_name,customer_email,subject,tag,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)")
+      .bind(id,session.workspace_id,b.customer_name.trim().slice(0,120),validEmail(b.customer_email)?b.customer_email.trim().toLowerCase():null,b.subject.trim().slice(0,240),typeof b.tag==="string"?b.tag.slice(0,60):"General",now,now).run();
+    if(typeof b.message==="string"&&b.message.trim())await env.DB.prepare("INSERT INTO messages (id,conversation_id,author_type,body,created_at) VALUES (?,?,'customer',?,?)").bind(crypto.randomUUID(),id,b.message.trim().slice(0,20000),now).run();
+    return json({ok:true,id},201);
+  }
+  const messageMatch=path.match(/^\/api\/conversations\/([^/]+)\/messages$/);
+  if(messageMatch){
+    const id=decodeURIComponent(messageMatch[1]);
+    const conversation=await env.DB.prepare("SELECT id FROM conversations WHERE id=? AND workspace_id=?").bind(id,session.workspace_id).first();
+    if(!conversation)return json({error:"Conversation not found."},404);
+    if(request.method==="GET"){
+      const rows=await env.DB.prepare("SELECT id,author_type,author_user_id,body,created_at FROM messages WHERE conversation_id=? ORDER BY created_at ASC LIMIT 500").bind(id).all();
+      return json({messages:rows.results||[]});
+    }
+    if(request.method==="POST"){
+      if(!["owner","admin","agent"].includes(session.role))return json({error:"You do not have permission to reply."},403);
+      const b=await body(request);
+      if(typeof b?.body!=="string"||!b.body.trim()||b.body.length>20000)return json({error:"Message must contain between 1 and 20000 characters."},400);
+      const now=new Date().toISOString(),messageId=crypto.randomUUID();
+      await env.DB.batch([
+        env.DB.prepare("INSERT INTO messages (id,conversation_id,author_type,author_user_id,body,created_at) VALUES (?,?,'agent',?,?,?)").bind(messageId,id,session.user_id,b.body.trim(),now),
+        env.DB.prepare("UPDATE conversations SET status='pending',updated_at=? WHERE id=? AND workspace_id=?").bind(now,id,session.workspace_id)
+      ]);
+      return json({ok:true,id:messageId,created_at:now},201);
+    }
+  }
+  const conversationMatch=path.match(/^\/api\/conversations\/([^/]+)$/);
+  if(conversationMatch&&request.method==="PATCH"){
+    if(!["owner","admin","agent"].includes(session.role))return json({error:"You do not have permission to update conversations."},403);
+    const id=decodeURIComponent(conversationMatch[1]),b=await body(request);
+    if(!["open","pending","resolved"].includes(b?.status))return json({error:"Invalid conversation status."},400);
+    const result=await env.DB.prepare("UPDATE conversations SET status=?,updated_at=? WHERE id=? AND workspace_id=?").bind(b.status,new Date().toISOString(),id,session.workspace_id).run();
+    if(!result.meta?.changes)return json({error:"Conversation not found."},404);
+    return json({ok:true});
+  }
+  return json({error:"Not found."},404);
+}
+
 function publicAsset(path) { return path.startsWith("/_next/")||["/icon.svg","/manifest.webmanifest","/sw.js","/favicon.ico"].includes(path)||/\.(png|jpg|jpeg|svg|webp|ico|css|js|woff2?)$/i.test(path); }
 export default {
   async fetch(request,env) {
