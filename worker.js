@@ -1,4 +1,5 @@
 import { analyzeOffline } from "./lib/ai-offline.mjs";
+import { createPasswordHash, verifyPassword, isCurrentPasswordHash } from "./lib/passwords.mjs";
 const requestWindows = new Map();
 const COOKIE = "resolveai_session";
 const SESSION_SECONDS = 604800;
@@ -75,14 +76,6 @@ function getCookie(request) {
 function randomToken() { const b = crypto.getRandomValues(new Uint8Array(32)); let s = ""; for (const n of b) s += String.fromCharCode(n); return btoa(s).replace(/=/g,"").replace(/\+/g,"-").replace(/\//g,"_"); }
 async function digest(value) { const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)); let s=""; for(const n of new Uint8Array(b)) s+=String.fromCharCode(n); return btoa(s).replace(/=/g,"").replace(/\+/g,"-").replace(/\//g,"_"); }
 function equal(a,b) { if(typeof a!=="string"||typeof b!=="string"||a.length!==b.length)return false; let n=0; for(let i=0;i<a.length;i++)n|=a.charCodeAt(i)^b.charCodeAt(i); return n===0; }
-function decode64url(s) { const b=atob(s.replace(/-/g,"+").replace(/_/g,"/")+"=".repeat((4-s.length%4)%4)); return Uint8Array.from(b,c=>c.charCodeAt(0)); }
-async function passwordHash(password, saltText) {
-  const salt = saltText ? decode64url(saltText) : crypto.getRandomValues(new Uint8Array(16));
-  const key = await crypto.subtle.importKey("raw",new TextEncoder().encode(password),"PBKDF2",false,["deriveBits"]);
-  const bits = await crypto.subtle.deriveBits({name:"PBKDF2",hash:"SHA-256",salt,iterations:100000},key,256);
-  let s=""; for(const n of new Uint8Array(bits))s+=String.fromCharCode(n);
-  return {hash:btoa(s).replace(/=/g,"").replace(/\+/g,"-").replace(/\//g,"_"),salt:(()=>{let v="";for(const n of salt)v+=String.fromCharCode(n);return btoa(v).replace(/=/g,"").replace(/\+/g,"-").replace(/\//g,"_")})()};
-}
 const validEmail = v => typeof v==="string" && v.length<=254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 const validPassword = v => typeof v==="string" && v.length>=12 && v.length<=128;
 const allowedOrigin = r => !r.headers.get("Origin") || r.headers.get("Origin")===new URL(r.url).origin;
@@ -128,7 +121,7 @@ async function auth(request,env,path) {
     if(!validEmail(b.email)||!validPassword(b.password))return json({error:"Enter a valid email and a password with at least 12 characters."},400);
     const count=await env.DB.prepare("SELECT COUNT(*) AS total FROM users").first();
     if(Number(count?.total||0)!==0)return json({error:"Initial setup has already been completed."},409);
-    const id=crypto.randomUUID(),wid=crypto.randomUUID(),pw=await passwordHash(b.password);
+    const id=crypto.randomUUID(),wid=crypto.randomUUID(),pw=await createPasswordHash(b.password);
     await env.DB.batch([
       env.DB.prepare("INSERT INTO users (id,email,password_hash,password_salt) VALUES (?,?,?,?)").bind(id,b.email.trim().toLowerCase(),pw.hash,pw.salt),
       env.DB.prepare("INSERT INTO workspaces (id,name,owner_user_id) VALUES (?,?,?)").bind(wid,(b.workspace_name||"My team").toString().slice(0,80),id),
@@ -145,9 +138,17 @@ async function auth(request,env,path) {
     if(attempts.length>=10)return json({error:"Too many sign-in attempts. Wait a minute and try again."},429);
     attempts.push(now);requestWindows.set(key,attempts);
     const u=await env.DB.prepare("SELECT id,password_hash,password_salt FROM users WHERE email=? COLLATE NOCASE").bind(b.email.trim()).first();
-    if(!u)return json({error:"Email or password is incorrect."},401);
-    const pw=await passwordHash(b.password,u.password_salt);
-    if(!equal(pw.hash,u.password_hash))return json({error:"Email or password is incorrect."},401);
+    if(!u){
+      // Do equivalent KDF work for unknown accounts to reduce response-time account enumeration.
+      await createPasswordHash(b.password);
+      return json({error:"Email or password is incorrect."},401);
+    }
+    if(!await verifyPassword(b.password,u.password_hash,u.password_salt))return json({error:"Email or password is incorrect."},401);
+    if(!isCurrentPasswordHash(u.password_hash)){
+      const upgraded=await createPasswordHash(b.password);
+      await env.DB.prepare("UPDATE users SET password_hash=?,password_salt=?,updated_at=? WHERE id=?")
+        .bind(upgraded.hash,upgraded.salt,new Date().toISOString(),u.id).run();
+    }
     const sessionToken=await newSession(env,u.id);
     if(request.headers.get("X-ResolveAI-Client")==="mobile")return json({ok:true,access_token:sessionToken,expires_in:SESSION_SECONDS});
     return json({ok:true},200,{"set-cookie":cookie(sessionToken)});
@@ -160,7 +161,7 @@ async function auth(request,env,path) {
     if(!inv||String(inv.email).toLowerCase()!==b.email.trim().toLowerCase())return json({error:"Invitation is invalid, expired, or for another email."},400);
     const exists=await env.DB.prepare("SELECT id FROM users WHERE email=? COLLATE NOCASE").bind(b.email.trim()).first();
     if(exists)return json({error:"This email already has an account. Please sign in."},409);
-    const id=crypto.randomUUID(),pw=await passwordHash(b.password);
+    const id=crypto.randomUUID(),pw=await createPasswordHash(b.password);
     await env.DB.batch([
       env.DB.prepare("INSERT INTO users (id,email,password_hash,password_salt) VALUES (?,?,?,?)").bind(id,b.email.trim().toLowerCase(),pw.hash,pw.salt),
       env.DB.prepare("INSERT INTO workspace_members (workspace_id,user_id,role) VALUES (?,?,?)").bind(inv.workspace_id,id,inv.role),

@@ -72,6 +72,15 @@ if [[ "$ME_CODE" != "401" || "$AI_CODE" != "401" ]]; then
 fi
 echo "PASS: account and AI endpoints require authentication."
 
+echo "3a/4 Running a harmless invalid-login request to exercise the live password KDF"
+KDF_CODE="$(curl --silent --show-error --max-time 30 -o "$AUTH_FILE" -w '%{http_code}' -X POST "$BASE_URL/api/auth/login" -H 'content-type: application/json' --data '{"email":"kdf-canary-unknown-user@invalid.example","password":"ResolveAI-KDF-Canary-Invalid-Password-2026"}' || true)"
+if [[ "$KDF_CODE" != "401" ]]; then
+  echo "FAIL: live password KDF/login check returned HTTP ${KDF_CODE:-no response}, expected 401."
+  exit 1
+fi
+echo "PASS: live password KDF completed and rejected an unknown account safely."
+
+
 echo "4/4 Verifying the dashboard redirects to private sign-in"
 ROOT_CODE="$(curl --silent --show-error --max-time 20 -o "$ROOT_FILE" -w '%{http_code}' "$BASE_URL/" || true)"
 if [[ "$ROOT_CODE" != "302" ]]; then

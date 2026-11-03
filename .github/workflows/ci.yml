@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, 'preview/resolveai-secret-refresh']
+    branches: [main, 'preview/resolveai-secret-refresh', 'preview/password-kdf-canary']
   pull_request:
 
 jobs:
@@ -40,16 +40,16 @@ jobs:
 
 
   preview-live-smoke:
-    name: Live Preview health, D1 binding and auth-boundary smoke test
-    if: github.ref == 'refs/heads/preview/resolveai-secret-refresh'
+    name: Live password KDF canary (isolated Preview Worker)
+    if: github.ref == 'refs/heads/preview/password-kdf-canary'
     runs-on: ubuntu-latest
     permissions:
       contents: read
     env:
-      RESOLVEAI_URL: https://preview-resolveai-secret-refresh-resolveai.aflakshhr.workers.dev
+      RESOLVEAI_URL: https://preview-password-kdf-canary-resolveai.aflakshhr.workers.dev
     steps:
       - uses: actions/checkout@v4
-      - name: Check the live Preview Worker
+      - name: Check the live Preview Worker and password KDF
         run: bash scripts/check-resolveai.sh
 
   mobile:
