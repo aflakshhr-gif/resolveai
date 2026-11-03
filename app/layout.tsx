@@ -8,7 +8,8 @@ export const metadata: Metadata = {
   applicationName: "ResolveAI",
   robots: { index: false, follow: false },
   manifest: "/manifest.webmanifest",
-  icons: { icon: "/icon.svg" }
+  icons: { icon: "/icon.svg", apple: "/icon.svg" },
+  appleWebApp: { capable: true, title: "ResolveAI", statusBarStyle: "default" }
 };
 
 export const viewport: Viewport = {
