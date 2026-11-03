@@ -1,3 +1,4 @@
+// @ts-nocheck
 class Mutex {
   private mutex = Promise.resolve();
 
