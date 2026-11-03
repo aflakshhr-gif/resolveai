@@ -1,3 +1,4 @@
+// @ts-nocheck
 import Mutex from './mutex.ts';
 import { getDigestHex, getUInt8Buffer } from './util.ts';
 import type { IDataType } from './util.ts';
