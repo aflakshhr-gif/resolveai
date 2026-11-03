@@ -112,7 +112,7 @@ jobs:
         run: |
           for attempt in $(seq 1 60); do
             health="$(curl --silent --show-error --max-time 10 "$RESOLVEAI_URL/api/health" || true)"
-            if [[ "$health" == *'"password_hash_version":"argon2id-v19-m19456-t2-p1"'* ]]; then
+            if [[ "$health" == *'"password_hash_version":"'${RESOLVEAI_EXPECT_PASSWORD_KDF}'"'* ]]; then
               echo "Canary KDF build is active."
               exit 0
             fi

@@ -40,8 +40,11 @@ if data.get("database_configured") is not True:
     print("FAIL: dedicated D1 binding is not configured.")
     sys.exit(1)
 expected = __import__("os").environ.get("RESOLVEAI_EXPECT_PASSWORD_KDF")
-if expected and data.get("password_hash_version") != expected:
-    print("FAIL: Preview has not activated the expected password KDF build.")
+actual = data.get("password_hash_version")
+if expected and actual != expected:
+    print("FAIL: password KDF marker mismatch.")
+    print("Expected: " + expected)
+    print("Actual:   " + str(actual))
     sys.exit(1)
 print("PASS: private-team Worker, D1 binding and expected KDF build are active.")
 PY
