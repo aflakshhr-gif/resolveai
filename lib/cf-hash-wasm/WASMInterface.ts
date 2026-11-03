@@ -1,7 +1,6 @@
 import Mutex from './mutex.ts';
-import {
-  decodeBase64, getDigestHex, getUInt8Buffer, IDataType,
-} from './util.ts';
+import { getDigestHex, getUInt8Buffer } from './util.ts';
+import type { IDataType } from './util.ts';
 
 export const MAX_HEAP = 16 * 1024;
 const wasmMutex = new Mutex();
