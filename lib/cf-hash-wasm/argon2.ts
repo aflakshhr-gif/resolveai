@@ -345,9 +345,7 @@ export async function argon2Verify(options: Argon2VerifyOptions): Promise<boolea
   const params = getHashParameters(options.password, options.hash);
   validateOptions(params);
 
-  const hashStart = options.hash.lastIndexOf('
-}
-) + 1;
+  const hashStart = options.hash.lastIndexOf(String.fromCharCode(36)) + 1;
   const result = await argon2Internal(params) as string;
   const actual = result.substring(hashStart);
   const expected = options.hash.substring(hashStart);
