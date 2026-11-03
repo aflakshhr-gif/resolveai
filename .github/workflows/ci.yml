@@ -38,6 +38,20 @@ jobs:
       - run: npm run build
       - run: npx --yes wrangler@latest deploy --dry-run
 
+
+  preview-live-smoke:
+    name: Live Preview health, D1 binding and auth-boundary smoke test
+    if: github.ref == 'refs/heads/preview/resolveai-secret-refresh'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      RESOLVEAI_URL: https://preview-resolveai-secret-refresh-resolveai.aflakshhr.workers.dev
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the live Preview Worker
+        run: bash scripts/check-resolveai.sh
+
   mobile:
     name: Expo mobile validation
     runs-on: ubuntu-latest

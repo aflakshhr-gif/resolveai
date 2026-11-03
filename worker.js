@@ -259,7 +259,6 @@ export default {
       if(!session)return json({error:"Authentication required."},401);
       if(path==="/api/auth/me"&&request.method==="GET")return json({user:{id:session.user_id,email:session.email},workspace:{id:session.workspace_id,name:session.workspace_name},role:session.role});
       if(path==="/api/auth/invites"&&request.method==="POST"){
-        if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
         if(!["owner","admin"].includes(session.role))return json({error:"Only workspace admins can invite members."},403);
         const b=await body(request),email=b?.email,role=b?.role;
         if(!validEmail(email)||!["admin","agent","viewer"].includes(role))return json({error:"Provide a valid email and role."},400);

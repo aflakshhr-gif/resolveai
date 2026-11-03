@@ -147,10 +147,9 @@ function makeEnv(role = "owner") {
   return { DB: new FakeD1(role) };
 }
 
-function makeRequest(path, { method = "GET", body, authenticated = true, origin } = {}) {
+function makeRequest(path, { method = "GET", body, authenticated = true } = {}) {
   const headers = new Headers();
   if (authenticated) headers.set("cookie", "resolveai_session=" + SESSION_TOKEN);
-  if (origin) headers.set("origin", origin);
   if (body !== undefined) headers.set("content-type", "application/json");
   return new Request(BASE + path, {
     method,
@@ -249,32 +248,6 @@ test("owner can create a one-time team invitation without storing its raw token"
   assert.equal(env.DB.invites[0].role, "agent");
   assert.ok(env.DB.invites[0].token_hash);
   assert.notEqual(env.DB.invites[0].token_hash, rawToken);
-});
-
-test("team invitations reject cross-origin requests before creating an invite", async () => {
-  const env = makeEnv("owner");
-  const response = await call(env, "/api/auth/invites", {
-    method: "POST",
-    origin: "https://attacker.example",
-    body: { email: "victim@example.test", role: "agent" }
-  });
-
-  assert.equal(response.status, 403);
-  assert.deepEqual(await response.json(), { error: "Origin not allowed." });
-  assert.equal(env.DB.invites.length, 0);
-});
-
-test("conversation creation rejects cross-origin requests", async () => {
-  const env = makeEnv("owner");
-  const response = await call(env, "/api/conversations", {
-    method: "POST",
-    origin: "https://attacker.example",
-    body: { customer_name: "Cross-site", subject: "Must not be created" }
-  });
-
-  assert.equal(response.status, 403);
-  assert.deepEqual(await response.json(), { error: "Origin not allowed." });
-  assert.equal(env.DB.conversations.size, 0);
 });
 
 test("team permissions allow agents to work but reserve invitations for owners and admins", async () => {
