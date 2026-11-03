@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { argon2id as cloudflareArgon2id } from "../lib/cf-hash-wasm/argon2.ts";
+import { createBLAKE2b } from "../lib/cf-hash-wasm/blake2b.ts";
+import { blake2b as referenceBlake2b } from "hash-wasm";
 import { argon2id as referenceArgon2id } from "hash-wasm";
 import {
   createPasswordHash,
@@ -64,5 +66,13 @@ test("Cloudflare-compatible Argon2id module matches the hash-wasm reference vect
   };
   const actual = await cloudflareArgon2id({ ...options, salt: Uint8Array.from(salt) });
   const expected = await referenceArgon2id({ ...options, salt: Uint8Array.from(salt) });
+  assert.equal(actual, expected);
+});
+
+test("Cloudflare-compatible BLAKE2b module matches the hash-wasm reference vector", async () => {
+  const actualHasher = await createBLAKE2b(512);
+  actualHasher.update("abc");
+  const actual = actualHasher.digest("hex");
+  const expected = await referenceBlake2b("abc", 512);
   assert.equal(actual, expected);
 });
