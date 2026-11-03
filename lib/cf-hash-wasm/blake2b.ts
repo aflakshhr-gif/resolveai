@@ -1,4 +1,5 @@
-import { WASMInterface, IWASMInterface, IHasher } from './WASMInterface.ts';
+import { WASMInterface } from './WASMInterface.ts';
+import type { IWASMInterface, IHasher } from './WASMInterface.ts';
 import Mutex from './mutex.ts';
 
 import wasmModule from "./wasm/blake2b.wasm";
