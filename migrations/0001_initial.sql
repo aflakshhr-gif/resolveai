@@ -1,6 +1,5 @@
 -- ResolveAI D1 foundation
 -- Apply only to a NEW, dedicated ResolveAI database. Never point this migration at block17-db.
-PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
