@@ -41,6 +41,9 @@ class FakeD1 {
     this.conversations = new Map();
     this.messages = new Map();
     this.invites = [];
+    this.authUser = null;
+    this.passwordUpdates = 0;
+    this.sessions = [];
   }
 
   async exec() {
@@ -61,6 +64,11 @@ class FakeD1 {
     if (sql.includes("FROM sessions s JOIN users")) {
       if (params[0] !== SESSION_HASH) return null;
       return { ...this.user, role: this.role };
+    }
+
+    if (sql.startsWith("SELECT id,password_hash,password_salt FROM users WHERE email=")) {
+      if (!this.authUser || this.authUser.email.toLowerCase() !== String(params[0]).toLowerCase()) return null;
+      return { ...this.authUser };
     }
 
     if (sql.startsWith("SELECT id FROM conversations WHERE id=? AND workspace_id=?")) {
@@ -91,6 +99,20 @@ class FakeD1 {
   }
 
   async run(sql, params) {
+    if (sql.startsWith("UPDATE users SET password_hash=?,password_salt=?,updated_at=? WHERE id=?")) {
+      const [password_hash, password_salt, updated_at, id] = params;
+      if (!this.authUser || this.authUser.id !== id) return { meta: { changes: 0 } };
+      this.authUser = { ...this.authUser, password_hash, password_salt, updated_at };
+      this.passwordUpdates += 1;
+      return { meta: { changes: 1 } };
+    }
+
+    if (sql.startsWith("INSERT INTO sessions")) {
+      const [id, user_id, token_hash, expires_at] = params;
+      this.sessions.push({ id, user_id, token_hash, expires_at });
+      return { meta: { changes: 1 } };
+    }
+
     if (sql.startsWith("INSERT INTO conversations")) {
       const [id, workspace_id, customer_name, customer_email, subject, tag, created_at, updated_at] = params;
       this.conversations.set(id, {
@@ -162,6 +184,74 @@ function makeRequest(path, { method = "GET", body, authenticated = true, origin 
 async function call(env, path, options) {
   return worker.fetch(makeRequest(path, options), env);
 }
+
+async function makeLegacyPassword(password) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]
+  );
+  const bits = await crypto.subtle.deriveBits({
+    name: "PBKDF2", hash: "SHA-256", salt, iterations: 100000
+  }, key, 256);
+  const toBase64Url = bytes => {
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+  };
+  return { hash: toBase64Url(new Uint8Array(bits)), salt: toBase64Url(salt) };
+}
+
+test("successful legacy sign-in upgrades the stored PBKDF2 hash to Argon2id", async () => {
+  const env = makeEnv("owner");
+  const password = "Existing Preview owner password 2026!";
+  const legacy = await makeLegacyPassword(password);
+  env.DB.authUser = {
+    id: "legacy-owner-id",
+    email: "legacy-owner@example.test",
+    password_hash: legacy.hash,
+    password_salt: legacy.salt
+  };
+
+  const response = await call(env, "/api/auth/login", {
+    method: "POST",
+    authenticated: false,
+    body: { email: env.DB.authUser.email, password }
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true });
+  assert.match(env.DB.authUser.password_hash, /^\$argon2id\$v=19\$m=19456,t=2,p=1\$/);
+  assert.notEqual(env.DB.authUser.password_hash, legacy.hash);
+  assert.notEqual(env.DB.authUser.password_salt, legacy.salt);
+  assert.equal(env.DB.passwordUpdates, 1);
+  assert.equal(env.DB.sessions.length, 1);
+  assert.equal(env.DB.sessions[0].user_id, "legacy-owner-id");
+  assert.match(response.headers.get("set-cookie") || "", /resolveai_session=/);
+});
+
+test("failed legacy sign-in never changes the password hash or creates a session", async () => {
+  const env = makeEnv("owner");
+  const legacy = await makeLegacyPassword("Correct password 2026!");
+  env.DB.authUser = {
+    id: "legacy-owner-id",
+    email: "legacy-owner-wrong@example.test",
+    password_hash: legacy.hash,
+    password_salt: legacy.salt
+  };
+
+  const response = await call(env, "/api/auth/login", {
+    method: "POST",
+    authenticated: false,
+    body: { email: env.DB.authUser.email, password: "wrong password" }
+  });
+
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: "Email or password is incorrect." });
+  assert.equal(env.DB.authUser.password_hash, legacy.hash);
+  assert.equal(env.DB.authUser.password_salt, legacy.salt);
+  assert.equal(env.DB.passwordUpdates, 0);
+  assert.equal(env.DB.sessions.length, 0);
+});
 
 test("private conversation endpoints reject requests without a session", async () => {
   const env = makeEnv();
