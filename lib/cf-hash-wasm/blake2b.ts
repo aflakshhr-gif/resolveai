@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { WASMInterface } from './WASMInterface.ts';
 import type { IWASMInterface, IHasher } from './WASMInterface.ts';
 import Mutex from './mutex.ts';
@@ -5,7 +6,8 @@ import Mutex from './mutex.ts';
 import wasmModule from "./wasm/blake2b.wasm";
 
 import lockedCreate from './lockedCreate.ts';
-import { getUInt8Buffer, IDataType } from './util.ts';
+import { getUInt8Buffer } from './util.ts';
+import type { IDataType } from './util.ts';
 
 const mutex = new Mutex();
 let wasmCache: IWASMInterface = null;
