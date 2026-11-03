@@ -52,7 +52,12 @@ export default function Home() {
   const [aiInsight, setAiInsight] = useState<AiInsight | null>(null);
   const [aiError, setAiError] = useState("");
   async function loadConversations() {
-    const response = await fetch("/api/conversations", { cache: "no-store" });
+    const response = await fetch("/api/conversations?refresh=" + Date.now(), {
+      cache: "no-store",
+      credentials: "same-origin",
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(15000)
+    });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Could not load conversations.");
     const mapped: Ticket[] = (data.conversations || []).map((item: any) => ({
@@ -73,6 +78,26 @@ export default function Home() {
   useEffect(() => {
     let active = true;
     loadConversations().catch(reason => { if (active) setApiError(reason instanceof Error ? reason.message : "Could not load conversations."); }).finally(() => { if (active) setLoadingTickets(false); });
+    return () => { active = false; };
+  }, []);
+  useEffect(() => {
+    let active = true;
+    fetch("/api/auth/me", {
+      cache: "no-store",
+      credentials: "same-origin",
+      signal: AbortSignal.timeout(10000)
+    })
+      .then(async response => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Could not load account.");
+        if (!active) return;
+        setUserEmail(data.user?.email || "Account");
+        setWorkspaceName(data.workspace?.name || "Private workspace");
+        setUserRole(data.role || "Member");
+      })
+      .catch(() => {
+        if (active) setUserEmail("Account details unavailable");
+      });
     return () => { active = false; };
   }, []);
   const active = tickets.find(t => t.id === selected) ?? tickets[0] ?? { id: "", name: "", email: "", initials: "?", subject: "No conversations yet", preview: "", time: "", status: "Open" as const, tag: "General", messages: [] };
