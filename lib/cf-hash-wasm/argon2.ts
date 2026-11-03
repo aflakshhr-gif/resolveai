@@ -2,10 +2,14 @@ import {
   decodeBase64,
   encodeBase64,
   getDecodeBase64Length,
-  getDigestHex, getUInt8Buffer, IDataType, writeHexToUInt8,
+  getDigestHex,
+  getUInt8Buffer,
+  writeHexToUInt8,
 } from './util.ts';
+import type { IDataType } from './util.ts';
 import { createBLAKE2b } from './blake2b.ts';
-import { WASMInterface, IHasher } from './WASMInterface.ts';
+import { WASMInterface } from './WASMInterface.ts';
+import type { IHasher } from './WASMInterface.ts';
 
 import wasmModule from "./wasm/argon2.wasm";
 
