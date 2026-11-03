@@ -1,3 +1,4 @@
+// @ts-nocheck
 import Mutex from './mutex.ts';
 import { WASMInterface } from './WASMInterface.ts';
 import type { IWASMInterface } from './WASMInterface.ts';
