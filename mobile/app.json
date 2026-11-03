@@ -2,8 +2,9 @@
   "expo": {
     "name": "ResolveAI",
     "slug": "resolveai-mobile",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
+    "scheme": "resolveai",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
@@ -11,17 +12,19 @@
     },
     "ios": {
       "supportsTablet": true,
+      "buildNumber": "2",
       "bundleIdentifier": "com.resolveai.support"
     },
     "android": {
       "package": "com.resolveai.support",
+      "versionCode": 2,
       "adaptiveIcon": {
         "backgroundColor": "#635bff"
       }
     },
-    "plugins": [],
+    "plugins": ["expo-secure-store"],
     "extra": {
-      "websiteUrl": ""
+      "websiteUrl": "https://resolveai.aflakshhr.workers.dev"
     }
   }
 }

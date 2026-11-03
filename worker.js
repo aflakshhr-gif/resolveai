@@ -90,7 +90,9 @@ async function body(r){try{return await r.json()}catch{return null}}
 async function sessionFor(request,env) {
   if(!env.DB)return null;
   await ensureSchema(env);
-  const token=getCookie(request); if(!token||token.length>200)return null;
+  const authorization=request.headers.get("Authorization")||"";
+  const bearer=authorization.startsWith("Bearer ")?authorization.slice(7).trim():null;
+  const token=bearer||getCookie(request); if(!token||token.length>200)return null;
   return await env.DB.prepare(`SELECT u.id AS user_id,u.email,w.id AS workspace_id,w.name AS workspace_name,wm.role
     FROM sessions s JOIN users u ON u.id=s.user_id JOIN workspace_members wm ON wm.user_id=u.id
     JOIN workspaces w ON w.id=wm.workspace_id WHERE s.token_hash=? AND s.expires_at>? ORDER BY wm.created_at LIMIT 1`)
@@ -111,7 +113,9 @@ async function auth(request,env,path) {
   }
   if(path==="/api/auth/logout"&&request.method==="POST"){
     if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
-    const token=getCookie(request); if(env.DB&&token)await env.DB.prepare("DELETE FROM sessions WHERE token_hash=?").bind(await digest(token)).run();
+    const authHeader=request.headers.get("Authorization")||"";
+    const bearer=authHeader.startsWith("Bearer ")?authHeader.slice(7).trim():null;
+    const token=getCookie(request)||bearer; if(env.DB&&token)await env.DB.prepare("DELETE FROM sessions WHERE token_hash=?").bind(await digest(token)).run();
     return json({ok:true},200,{"set-cookie":cookie("",0)});
   }
   if(!env.DB)return json({error:"Database binding DB is not configured."},503);
@@ -144,7 +148,9 @@ async function auth(request,env,path) {
     if(!u)return json({error:"Email or password is incorrect."},401);
     const pw=await passwordHash(b.password,u.password_salt);
     if(!equal(pw.hash,u.password_hash))return json({error:"Email or password is incorrect."},401);
-    return json({ok:true},200,{"set-cookie":cookie(await newSession(env,u.id))});
+    const sessionToken=await newSession(env,u.id);
+    if(request.headers.get("X-ResolveAI-Client")==="mobile")return json({ok:true,access_token:sessionToken,expires_in:SESSION_SECONDS});
+    return json({ok:true},200,{"set-cookie":cookie(sessionToken)});
   }
   if(path==="/api/auth/accept-invite"&&request.method==="POST"){
     if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
@@ -288,6 +294,7 @@ export default {
       const session=await sessionFor(request,env);
       return session?Response.redirect(new URL("/",request.url),302):securePage(await env.ASSETS.fetch(request));
     }
+    if(path==="/website"||path==="/qr")return securePage(await env.ASSETS.fetch(request));
     if(publicAsset(path))return env.ASSETS.fetch(request);
     const session=await sessionFor(request,env);
     if(!session)return Response.redirect(new URL("/login/",request.url),302);
