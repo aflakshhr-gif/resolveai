@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --experimental-default-type=module --test tests/*.test.mjs"
+    "test": "node --experimental-default-type=module --experimental-strip-types --experimental-loader ./tests/wasm-loader.mjs --test tests/*.test.mjs",
+    "prebuild": "node scripts/prepare-password-wasm.mjs",
+    "pretest": "node scripts/prepare-password-wasm.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
@@ -15,8 +17,7 @@
     "qrcode.react": "^4.2.0",
     "react": "^18",
     "react-dom": "^18",
-    "recharts": "^2.15.0",
-    "hash-wasm": "4.12.0"
+    "recharts": "^2.15.0"
   },
   "devDependencies": {
     "@types/node": "^22",
@@ -26,6 +27,7 @@
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
-    "wrangler": "4.136.3"
+    "wrangler": "4.136.3",
+    "hash-wasm": "4.12.0"
   }
 }

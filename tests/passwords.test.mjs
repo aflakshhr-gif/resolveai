@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { argon2id as cloudflareArgon2id } from "../lib/cf-hash-wasm/argon2.ts";
+import { argon2id as referenceArgon2id } from "hash-wasm";
 import {
   createPasswordHash,
   isCurrentPasswordHash,
@@ -47,4 +49,20 @@ test("malformed or unknown password-hash schemes fail closed", async () => {
   assert.equal(await verifyPassword("password", "$argon2id$broken", "c2FsdA"), false);
   assert.equal(await verifyPassword("password", "$unknown$v=1$hash", "c2FsdA"), false);
   assert.equal(await verifyPassword("password", "", "c2FsdA"), false);
+});
+
+test("Cloudflare-compatible Argon2id module matches the hash-wasm reference vector", async () => {
+  const salt = new Uint8Array([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]);
+  const options = {
+    password: "cross-check password",
+    salt,
+    iterations: 2,
+    parallelism: 1,
+    memorySize: 32,
+    hashLength: 32,
+    outputType: "encoded"
+  };
+  const actual = await cloudflareArgon2id({ ...options, salt: Uint8Array.from(salt) });
+  const expected = await referenceArgon2id({ ...options, salt: Uint8Array.from(salt) });
+  assert.equal(actual, expected);
 });
