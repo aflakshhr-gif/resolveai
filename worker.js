@@ -60,7 +60,7 @@ let schemaPromise;
 async function ensureSchema(env) {
   if (!env.DB) throw new Error("Database binding DB is not configured.");
   if (!schemaPromise) {
-    schemaPromise = env.DB.exec(SCHEMA_SQL).catch(error => { schemaPromise = null; throw error; });
+    schemaPromise = env.DB.exec(SCHEMA_SQL.replaceAll(/\n/g, " ")).catch(error => { schemaPromise = null; throw error; });
   }
   await schemaPromise;
 }
