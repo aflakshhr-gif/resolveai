@@ -49,8 +49,21 @@ jobs:
       contents: read
     env:
       RESOLVEAI_URL: https://preview-password-kdf-canary-resolveai.aflakshhr.workers.dev
+      RESOLVEAI_EXPECT_PASSWORD_KDF: argon2id-v19-m19456-t2-p1
     steps:
       - uses: actions/checkout@v4
+      - name: Wait for Cloudflare to activate the canary build
+        run: |
+          for attempt in $(seq 1 60); do
+            health="$(curl --silent --show-error --max-time 10 "$RESOLVEAI_URL/api/health" || true)"
+            if [[ "$health" == *'"password_hash_version":"argon2id-v19-m19456-t2-p1"'* ]]; then
+              echo "Canary KDF build is active."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "The expected KDF build did not become active on Preview."
+          exit 1
       - name: Check the live Preview Worker and password KDF
         run: bash scripts/check-resolveai.sh
 

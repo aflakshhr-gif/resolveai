@@ -39,7 +39,11 @@ if data.get("service") != "ResolveAI" or data.get("status") != "ok" or data.get(
 if data.get("database_configured") is not True:
     print("FAIL: dedicated D1 binding is not configured.")
     sys.exit(1)
-print("PASS: private-team Worker is online and D1 binding is present.")
+expected = __import__("os").environ.get("RESOLVEAI_EXPECT_PASSWORD_KDF")
+if expected and data.get("password_hash_version") != expected:
+    print("FAIL: Preview has not activated the expected password KDF build.")
+    sys.exit(1)
+print("PASS: private-team Worker, D1 binding and expected KDF build are active.")
 PY
 
 echo "2/4 Checking database initialization and owner setup status"
