@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'preview/resolveai-secret-refresh']
   pull_request:
 
 jobs:
@@ -11,6 +11,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run ResolveAI unit tests
+        run: npm test
       - name: Validate Worker JavaScript syntax
         run: node --check worker.js
       - name: Validate smoke-test shell syntax
