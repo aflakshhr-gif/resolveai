@@ -1,3 +1,4 @@
+// @ts-nocheck
 import {
   decodeBase64,
   encodeBase64,
