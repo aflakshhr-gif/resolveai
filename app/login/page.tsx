@@ -16,18 +16,29 @@ export default function LoginPage() {
   const [workspaceName, setWorkspaceName] = useState("My team");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [statusAttempt, setStatusAttempt] = useState(0);
 
   useEffect(() => {
+    let active = true;
     const token = new URLSearchParams(window.location.search).get("invite") || "";
     setInviteToken(token);
-    fetch("/api/auth/status", { cache: "no-store" })
+    setError("");
+    fetch("/api/auth/status", { cache: "no-store", signal: AbortSignal.timeout(12000) })
       .then(async response => {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Private workspace is not ready.");
-        setMode(token ? "invite" : data.setup_required ? "setup" : "login");
+        if (active) setMode(token ? "invite" : data.setup_required ? "setup" : "login");
       })
-      .catch(reason => { setError(reason instanceof Error ? reason.message : "Cannot connect to ResolveAI."); setMode("unavailable"); });
-  }, []);
+      .catch(reason => {
+        if (!active) return;
+        const timedOut = reason instanceof Error && (reason.name === "TimeoutError" || reason.name === "AbortError");
+        setError(timedOut
+          ? "The secure workspace check timed out. Check your connection and try again."
+          : reason instanceof Error ? reason.message : "Cannot connect to ResolveAI.");
+        setMode("unavailable");
+      });
+    return () => { active = false; };
+  }, [statusAttempt]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -53,7 +64,7 @@ export default function LoginPage() {
       <div className="auth-eyebrow">PRIVATE TEAM WORKSPACE</div>
       <h1>{mode === "setup" ? "Create your workspace" : mode === "invite" ? "Join your team" : mode === "unavailable" ? "Workspace unavailable" : "Welcome back"}</h1>
       <p className="auth-description">{mode === "setup" ? "Set up the owner account. Public registration is disabled." : mode === "invite" ? "Complete your account using the invitation from your workspace admin." : mode === "unavailable" ? "The workspace needs its database connection before you can sign in." : "Sign in to your private ResolveAI workspace."}</p>
-      {mode === "loading" ? <div className="auth-loading">Checking secure workspace…</div> : mode === "unavailable" ? <div className="auth-error">{error}</div> : <form onSubmit={submit} className="auth-form">
+      {mode === "loading" ? <div className="auth-loading">Checking secure workspace…</div> : mode === "unavailable" ? <><div className="auth-error" role="alert">{error}</div><button className="auth-submit" type="button" onClick={() => { setMode("loading"); setStatusAttempt(attempt => attempt + 1); }}>Try again</button></> : <form onSubmit={submit} className="auth-form">
         {mode === "setup" || mode === "invite" ? <label>Your name<input value={name} onChange={e=>setName(e.target.value)} autoComplete="name" required maxLength={80} placeholder="Your name"/></label> : null}
         <label>Work email<input type="email" value={email} onChange={e=>setEmail(e.target.value)} autoComplete="username" required maxLength={254} placeholder="you@company.com"/></label>
         <label>Password<input type="password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} required minLength={12} maxLength={128} placeholder="At least 12 characters"/></label>
