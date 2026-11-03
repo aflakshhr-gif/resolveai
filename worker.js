@@ -252,7 +252,7 @@ function publicAsset(path) { return path.startsWith("/_next/")||["/icon.svg","/m
 export default {
   async fetch(request,env) {
     const url=new URL(request.url),path=url.pathname.replace(/\/$/,"")||"/";
-    if(path==="/api/health"&&request.method==="GET")return json({service:"ResolveAI",status:"ok",mode:"private-team",database_configured:Boolean(env.DB),password_hash_version:"argon2id-v19-m19456-t2-p1"});
+    if(path==="/api/health"&&request.method==="GET")return json({service:"ResolveAI",status:"ok",mode:"private-team",database_configured:Boolean(env.DB),password_hash_version:"argon2id-v19-m19456-t2-p1-UNBUILT"});
     if(path.startsWith("/api/auth/")){const result=await auth(request,env,path);if(result)return result;}
     if(path.startsWith("/api/")){
       if(!env.DB)return json({error:"Database binding DB is not configured."},503);

@@ -6,14 +6,62 @@ on:
   pull_request:
 
 jobs:
+  password-wasm:
+    name: Build official Argon2id and BLAKE2b WASM canary
+    if: github.ref == 'refs/heads/preview/password-kdf-canary'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      kdf_marker: ${{ steps.pin.outputs.marker }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the official WASM compiler toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld
+      - name: Compile hash-wasm v4.12.0 sources with upstream flags
+        run: bash scripts/build-password-wasm.sh
+      - name: Pin binary hashes and publish generated artifacts to Canary branch
+        id: pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest="$(cat lib/cf-hash-wasm/wasm/argon2.wasm lib/cf-hash-wasm/wasm/blake2b.wasm | sha256sum | cut -c1-12)"
+          marker="argon2id-v19-m19456-t2-p1-cfwasm-${digest}"
+          sed -E -i "s/argon2id-v19-m19456-t2-p1(-cfwasm-[a-f0-9]+|-UNBUILT)?/${marker}/g" worker.js
+          echo "marker=${marker}" >> "$GITHUB_OUTPUT"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add worker.js lib/cf-hash-wasm/wasm/argon2.wasm.gz lib/cf-hash-wasm/wasm/blake2b.wasm.gz
+          if ! git diff --cached --quiet; then
+            git commit -m "Pin official Argon2id WASM artifacts [skip ci]"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          else
+            echo "The official WASM artifacts are already pinned."
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: password-wasm
+          path: lib/cf-hash-wasm/wasm/*.wasm.gz
+          if-no-files-found: error
+          retention-days: 2
+
   resolveai-smoke-script:
     name: ResolveAI smoke-test script validation
+    needs: password-wasm
+    if: always() && (needs.password-wasm.result == 'success' || needs.password-wasm.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - uses: actions/download-artifact@v4
+        if: needs.password-wasm.result == 'success'
+        with:
+          name: password-wasm
+          path: lib/cf-hash-wasm/wasm
       - name: Install web dependencies for unit tests
         run: npm install
       - name: Run ResolveAI unit tests
@@ -29,12 +77,19 @@ jobs:
 
   web:
     name: Web typecheck, static export and Workers dry run
+    needs: password-wasm
+    if: always() && (needs.password-wasm.result == 'success' || needs.password-wasm.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - uses: actions/download-artifact@v4
+        if: needs.password-wasm.result == 'success'
+        with:
+          name: password-wasm
+          path: lib/cf-hash-wasm/wasm
       - run: npm install
       - run: npx tsc --noEmit
       - run: npm run build
@@ -43,13 +98,14 @@ jobs:
 
   preview-live-smoke:
     name: Live password KDF canary (isolated Preview Worker)
-    if: github.ref == 'refs/heads/preview/password-kdf-canary'
+    needs: password-wasm
+    if: github.ref == 'refs/heads/preview/password-kdf-canary' && needs.password-wasm.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
     env:
       RESOLVEAI_URL: https://preview-password-kdf-canary-resolveai.aflakshhr.workers.dev
-      RESOLVEAI_EXPECT_PASSWORD_KDF: argon2id-v19-m19456-t2-p1
+      RESOLVEAI_EXPECT_PASSWORD_KDF: ${{ needs.password-wasm.outputs.kdf_marker }}
     steps:
       - uses: actions/checkout@v4
       - name: Wait for Cloudflare to activate the canary build
