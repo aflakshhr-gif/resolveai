@@ -229,7 +229,8 @@ async function auth(request,env,path) {
     await env.DB.batch([
       env.DB.prepare("INSERT INTO users (id,email,password_hash,password_salt) VALUES (?,?,?,?)").bind(id,b.email.trim().toLowerCase(),pw.hash,pw.salt),
       env.DB.prepare("INSERT INTO workspaces (id,name,owner_user_id) VALUES (?,?,?)").bind(wid,(b.workspace_name||"My team").toString().slice(0,80),id),
-      env.DB.prepare("INSERT INTO workspace_members (workspace_id,user_id,role) VALUES (?,?,'owner')").bind(wid,id)
+      env.DB.prepare("INSERT INTO workspace_members (workspace_id,user_id,role) VALUES (?,?,'owner')").bind(wid,id),
+      env.DB.prepare("INSERT OR IGNORE INTO block_admins (user_id) VALUES (?)").bind(id)
     ]);
     return json({ok:true},201,{"set-cookie":cookie(await newSession(env,id))});
   }
@@ -485,7 +486,7 @@ export default {
       }
       if(path==="/api/membership"&&request.method==="GET"){
         const own=await env.DB.prepare("SELECT full_name,phone,identity_number,unit_code,unit_details,resident_type,payment_method,payment_reference,status,review_note,updated_at FROM membership_requests WHERE user_id=?").bind(session.user_id).first();
-        if(["owner","admin"].includes(session.role)){
+        if(await isBlockAdmin(env,session.user_id)){
           const rows=await env.DB.prepare("SELECT mr.user_id,u.email,mr.full_name,mr.phone,mr.identity_number,mr.unit_code,mr.unit_details,mr.resident_type,mr.payment_method,mr.payment_reference,mr.status,mr.created_at,mr.updated_at FROM membership_requests mr JOIN users u ON u.id=mr.user_id WHERE mr.status IN ('pending','rejected') ORDER BY mr.updated_at ASC LIMIT 200").all();
           return json({request:own,requests:rows.results||[]});
         }
@@ -503,7 +504,7 @@ export default {
       }
       const membershipReview=path.match(/^\/api\/membership\/([^/]+)$/);
       if(membershipReview&&request.method==="PATCH"){
-        if(!["owner","admin"].includes(session.role))return json({error:"Only block administrators can review memberships."},403);
+        if(!await isBlockAdmin(env,session.user_id))return json({error:"Only the registered block administrator can review memberships."},403);
         if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
         const b=await body(request),userId=decodeURIComponent(membershipReview[1]);
         if(!["approved","rejected"].includes(b?.status))return json({error:"Choose approve or reject."},400);
@@ -543,7 +544,8 @@ export default {
     if(path==="/membership"||path==="/admin/memberships"){
       const session=await sessionFor(request,env);
       if(!session)return Response.redirect(new URL("/login/",request.url),302);
-      if(path==="/admin/memberships"&&!["owner","admin"].includes(session.role))return new Response("Forbidden",{status:403});
+      await ensureSchema(env);
+      if(path==="/admin/memberships"&&!await isBlockAdmin(env,session.user_id))return new Response("Forbidden",{status:403});
       if(path==="/membership"&&session.membership_status==="approved")return Response.redirect(new URL("/",request.url),302);
       return securePage(await env.ASSETS.fetch(request));
     }
