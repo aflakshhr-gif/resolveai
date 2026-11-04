@@ -14,7 +14,7 @@ jobs:
       - name: Validate Worker JavaScript syntax
         run: node --check worker.js
       - name: Validate smoke-test shell syntax
-        run: bash -n scripts/check-resolveai.sh
+        run: bash -n scripts/check-resolveai.sh scripts/check-preview-health.sh
       - name: Verify runtime D1 schema batching
         run: node scripts/test-d1-schema-batch.mjs
       - name: Validate dedicated D1 schema migrations
@@ -36,6 +36,8 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm run build
       - run: npx --yes wrangler@latest deploy --dry-run
+      - name: Verify deployed preview and read-only D1 connectivity
+        run: bash scripts/check-preview-health.sh
 
   mobile:
     name: Expo mobile validation
