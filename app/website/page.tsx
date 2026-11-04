@@ -191,6 +191,7 @@ export default function WebsitePage() {
                         Hi, I need a little help getting back into my account.
                       </div>
                       <div className="rx-message rx-message-out">
+                        <span className="rx-draft-tag">UNSENT DRAFT · NOT DELIVERED</span>
                         Of course. I’ll review the details and follow up.
                       </div>
                       <div className="rx-internal-note">
