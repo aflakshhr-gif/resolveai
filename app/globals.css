@@ -811,3 +811,20 @@ button,input,textarea,select{accent-color:#269d96}
 .rx-approval-launch-card>div>small{font-size:8px;color:#a0aeae;line-height:1.6}
 .rx-approval-launch-card>.primary-btn{white-space:nowrap}
 @media(max-width:760px){.rx-approval-launch-card{grid-template-columns:43px minmax(0,1fr);gap:11px;padding:16px}.rx-approval-launch-icon{width:40px;height:40px}.rx-approval-launch-card>.primary-btn{grid-column:1/-1;justify-content:center}}
+
+.rx-offline-page{position:relative;isolation:isolate;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;padding:28px 20px;background:radial-gradient(ellipse at 80% 12%,rgba(63,191,174,.12),transparent 28%),linear-gradient(145deg,#f6fafa,#edf4f3);color:#183740}
+.rx-offline-glow{position:absolute;z-index:-1;right:-190px;top:-230px;width:500px;height:500px;border-radius:50%;background:radial-gradient(circle,rgba(57,183,168,.14),transparent 68%)}
+.rx-offline-brand{position:absolute;top:29px;left:max(24px,calc((100% - 1100px)/2));display:flex;align-items:center;gap:10px;color:#193e47}
+.rx-offline-brand>span{width:37px;height:37px;display:grid;place-items:center;border-radius:12px;background:linear-gradient(145deg,#1c6870,#103b49);color:#eafffc}
+.rx-offline-brand>b{font-family:Manrope,sans-serif;font-size:17px;letter-spacing:-.6px}
+.rx-offline-brand>b span{color:#329f96}
+.rx-offline-card{width:min(100%,470px);padding:40px 38px;border:1px solid #e4eeec;border-radius:22px;background:#fff;box-shadow:0 22px 60px rgba(19,62,67,.09);text-align:center}
+.rx-offline-icon{width:59px;height:59px;display:grid;place-items:center;margin:0 auto 21px;border:1px solid #dcece8;border-radius:18px;background:#eaf6f2;color:#31978e}
+.rx-offline-card .rx-section-kicker{font-size:8px;letter-spacing:1.3px}
+.rx-offline-card h1{font-family:Manrope,sans-serif;font-size:34px;line-height:1.13;letter-spacing:-1.2px;color:#193e48;margin:13px 0}
+.rx-offline-card h1 em{font-style:normal;color:#2b9b93}
+.rx-offline-card p{font-size:10px;line-height:1.9;color:#80979a;margin:0 auto 23px;max-width:370px}
+.rx-offline-retry{width:100%;height:44px;display:flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:10px;background:linear-gradient(135deg,#1e6d75,#39b6a8);color:#fff;font-size:10px;font-weight:800}
+.rx-offline-home{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:17px;color:#6c8d8d;font-size:9px}
+.rx-offline-home:hover{color:#278f88}
+.rx-offline-footer{position:absolute;bottom:24px;color:#9aabab;font-size:8px}
