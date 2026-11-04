@@ -67,6 +67,11 @@ CREATE TABLE IF NOT EXISTS membership_requests (
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_membership_requests_status ON membership_requests(status,updated_at);
+CREATE TABLE IF NOT EXISTS unit_workspaces (
+  unit_code TEXT PRIMARY KEY COLLATE NOCASE,
+  workspace_id TEXT NOT NULL UNIQUE REFERENCES workspaces(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
 `;
 let schemaPromise;
 async function ensureSchema(env) {
@@ -117,6 +122,29 @@ async function sessionFor(request,env) {
     JOIN workspaces w ON w.id=wm.workspace_id LEFT JOIN membership_requests mr ON mr.user_id=u.id
     WHERE s.token_hash=? AND s.expires_at>? ORDER BY wm.created_at LIMIT 1`)
     .bind(await digest(token),new Date().toISOString()).first();
+}
+async function ensureUnitWorkspace(env, unitCode, adminUserId) {
+  const normalized = String(unitCode || "").trim().toUpperCase();
+  if (!normalized) throw new Error("Unit code is required before approval.");
+  let link = await env.DB.prepare("SELECT workspace_id FROM unit_workspaces WHERE unit_code=? COLLATE NOCASE").bind(normalized).first();
+  if (link?.workspace_id) return link.workspace_id;
+  const workspaceId = crypto.randomUUID();
+  try {
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO workspaces (id,name,owner_user_id) VALUES (?,?,?)")
+        .bind(workspaceId, "Unit " + normalized, adminUserId),
+      env.DB.prepare("INSERT INTO unit_workspaces (unit_code,workspace_id) VALUES (?,?)")
+        .bind(normalized, workspaceId)
+    ]);
+  } catch (error) {
+    // A concurrent approval for the same unit may have created the mapping.
+    link = await env.DB.prepare("SELECT workspace_id FROM unit_workspaces WHERE unit_code=? COLLATE NOCASE").bind(normalized).first();
+    if (!link?.workspace_id) throw error;
+    return link.workspace_id;
+  }
+  link = await env.DB.prepare("SELECT workspace_id FROM unit_workspaces WHERE unit_code=? COLLATE NOCASE").bind(normalized).first();
+  if (!link?.workspace_id) throw new Error("Could not create the private unit workspace.");
+  return link.workspace_id;
 }
 async function newSession(env,userId) {
   const token=randomToken();
@@ -349,9 +377,23 @@ export default {
         if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
         const b=await body(request),userId=decodeURIComponent(membershipReview[1]);
         if(!["approved","rejected"].includes(b?.status))return json({error:"Choose approve or reject."},400);
-        const result=await env.DB.prepare("UPDATE membership_requests SET status=?,reviewed_by_user_id=?,reviewed_at=?,review_note=?,updated_at=? WHERE user_id=? AND status IN ('pending','rejected')").bind(b.status,session.user_id,new Date().toISOString(),typeof b.note==="string"?b.note.trim().slice(0,500):null,new Date().toISOString(),userId).run();
-        if(!result.meta?.changes)return json({error:"Pending membership request not found."},404);
-        if(b.status==="approved")await env.DB.prepare("UPDATE workspace_members SET role='agent' WHERE user_id=? AND role='viewer'").bind(userId).run();
+        const requestRow=await env.DB.prepare("SELECT unit_code FROM membership_requests WHERE user_id=? AND status IN ('pending','rejected')").bind(userId).first();
+        if(!requestRow)return json({error:"Pending membership request not found."},404);
+        const reviewedAt=new Date().toISOString();
+        if(b.status==="approved"){
+          const unitWorkspaceId=await ensureUnitWorkspace(env,requestRow.unit_code,session.user_id);
+          const result=await env.DB.batch([
+            env.DB.prepare("UPDATE membership_requests SET status='approved',reviewed_by_user_id=?,reviewed_at=?,review_note=?,updated_at=? WHERE user_id=? AND status IN ('pending','rejected')")
+              .bind(session.user_id,reviewedAt,typeof b.note==="string"?b.note.trim().slice(0,500):null,reviewedAt,userId),
+            env.DB.prepare("UPDATE workspace_members SET workspace_id=?,role='agent' WHERE user_id=?")
+              .bind(unitWorkspaceId,userId)
+          ]);
+          if(!result[0]?.meta?.changes)return json({error:"Membership request changed before approval. Refresh and retry."},409);
+        } else {
+          const result=await env.DB.prepare("UPDATE membership_requests SET status='rejected',reviewed_by_user_id=?,reviewed_at=?,review_note=?,updated_at=? WHERE user_id=? AND status IN ('pending','rejected')")
+            .bind(session.user_id,reviewedAt,typeof b.note==="string"?b.note.trim().slice(0,500):null,reviewedAt,userId).run();
+          if(!result.meta?.changes)return json({error:"Membership request changed before review. Refresh and retry."},409);
+        }
         return json({ok:true,status:b.status});
       }
       if(session.membership_status!=="approved")return json({error:"Complete your unit membership form and wait for block administrator approval.",membership_required:true},403);
