@@ -860,6 +860,12 @@ export default {
       const session=await sessionFor(request,env);
       return session?Response.redirect(new URL(session.membership_status==="approved"?"/":"/membership/",request.url),302):securePage(await env.ASSETS.fetch(request));
     }
+    if(path==="/"){
+      const session=await sessionFor(request,env);
+      if(!session)return Response.redirect(new URL("/website/",request.url),302);
+      if(session.membership_status!=="approved")return Response.redirect(new URL("/membership/",request.url),302);
+      return securePage(await env.ASSETS.fetch(request));
+    }
     if(path==="/website"||path==="/qr")return securePage(await env.ASSETS.fetch(request));
     if(publicAsset(path))return env.ASSETS.fetch(request);
     const session=await sessionFor(request,env);
