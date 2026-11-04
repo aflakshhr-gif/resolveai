@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Activity, ArrowUpRight, CheckCircle2, LifeBuoy, LockKeyhole, ShieldCheck, Sparkles } from "lucide-react";
+import { Activity, ArrowUpRight, CheckCircle2, Inbox, LifeBuoy, LockKeyhole, ShieldCheck, Sparkles } from "lucide-react";
 
 type Mode = "loading" | "login" | "register" | "setup" | "invite" | "unavailable" | "forgot" | "reset" | "verify_pending" | "verify_email";
 
