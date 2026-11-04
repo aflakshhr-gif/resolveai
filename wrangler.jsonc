@@ -7,6 +7,12 @@
     "vars": {
       "RESOLVEAI_PUBLIC_URL": "https://feature-unit-membership-approval-resolveai.aflakshhr.workers.dev"
     },
+    "send_email": [
+      {
+        "name": "EMAIL",
+        "remote": true
+      }
+    ],
     "d1_databases": [
       {
         "binding": "DB",
