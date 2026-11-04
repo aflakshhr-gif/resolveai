@@ -132,14 +132,27 @@ async function sessionFor(request,env) {
   const authorization=request.headers.get("Authorization")||"";
   const bearer=authorization.startsWith("Bearer ")?authorization.slice(7).trim():null;
   const token=bearer||getCookie(request); if(!token||token.length>200)return null;
-  // Session validation only reads the existing login/session/workspace tables.
-  // Schema setup is deferred until an authenticated feature actually needs it.
-  return await env.DB.prepare(`SELECT u.id AS user_id,u.email,w.id AS workspace_id,w.name AS workspace_name,wm.role,
-    COALESCE(mr.status,'approved') AS membership_status
-    FROM sessions s JOIN users u ON u.id=s.user_id JOIN workspace_members wm ON wm.user_id=u.id
-    JOIN workspaces w ON w.id=wm.workspace_id LEFT JOIN membership_requests mr ON mr.user_id=u.id
-    WHERE s.token_hash=? AND s.expires_at>? ORDER BY wm.created_at LIMIT 1`)
-    .bind(await digest(token),new Date().toISOString()).first();
+  const tokenHash=await digest(token);
+  const expiresAt=new Date().toISOString();
+  try {
+    return await env.DB.prepare(`SELECT u.id AS user_id,u.email,w.id AS workspace_id,w.name AS workspace_name,wm.role,
+      COALESCE(mr.status,'approved') AS membership_status
+      FROM sessions s JOIN users u ON u.id=s.user_id JOIN workspace_members wm ON wm.user_id=u.id
+      JOIN workspaces w ON w.id=wm.workspace_id LEFT JOIN membership_requests mr ON mr.user_id=u.id
+      WHERE s.token_hash=? AND s.expires_at>? ORDER BY wm.created_at LIMIT 1`)
+      .bind(tokenHash,expiresAt).first();
+  } catch(error) {
+    // Older workspaces do not have membership tables yet. Existing users remain
+    // approved in their current workspace; do not run DDL just to validate a session.
+    const message=String(error?.message||error||"").toLowerCase();
+    if(!message.includes("membership_requests") || !message.includes("no such table")) throw error;
+    return await env.DB.prepare(`SELECT u.id AS user_id,u.email,w.id AS workspace_id,w.name AS workspace_name,wm.role,
+      'approved' AS membership_status
+      FROM sessions s JOIN users u ON u.id=s.user_id JOIN workspace_members wm ON wm.user_id=u.id
+      JOIN workspaces w ON w.id=wm.workspace_id
+      WHERE s.token_hash=? AND s.expires_at>? ORDER BY wm.created_at LIMIT 1`)
+      .bind(tokenHash,expiresAt).first();
+  }
 }
 async function ensureUnitWorkspace(env, unitCode, adminUserId) {
   const normalized = String(unitCode || "").trim().toUpperCase();
