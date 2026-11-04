@@ -14,7 +14,9 @@ jobs:
       - name: Validate Worker JavaScript syntax
         run: node --check worker.js
       - name: Validate smoke-test shell syntax
-        run: bash -n scripts/check-resolveai.sh scripts/test-membership-isolation.sh scripts/test-legacy-session-fallback.sh scripts/test-legacy-account-mapping.sh
+        run: bash -n scripts/check-resolveai.sh scripts/check-preview-health.sh scripts/test-membership-isolation.sh scripts/test-legacy-session-fallback.sh scripts/test-legacy-account-mapping.sh
+      - name: Verify runtime D1 schema batching
+        run: node scripts/test-d1-schema-batch.mjs
       - name: Verify unit workspace data isolation
         run: bash scripts/test-membership-isolation.sh
       - name: Verify existing admin session on legacy schema
@@ -42,6 +44,9 @@ jobs:
       - run: npx --yes wrangler@latest deploy --dry-run
       - name: Verify deployed preview and read-only D1 connectivity
         run: bash scripts/check-preview-health.sh
+      - name: Verify production Worker and read-only D1 connectivity after main deployment
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: RESOLVEAI_URL=https://resolveai.aflakshhr.workers.dev bash scripts/check-preview-health.sh
 
   mobile:
     name: Expo mobile validation
@@ -57,4 +62,3 @@ jobs:
       - run: npm install
       - run: npx expo export --platform android
       - run: npx expo export --platform ios
-
