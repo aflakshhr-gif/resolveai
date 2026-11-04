@@ -83,18 +83,18 @@ function doPost(e) {
 function isValidEmail(value) {
   return typeof value === "string" &&
     value.length <= 254 &&
-    /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(value);
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
 function isAllowedResetUrl(value, configuredOrigins) {
   if (typeof value !== "string" || value.length > 1200) return false;
-  const match = value.match(/^(https:\\/\\/[^/?#]+)\\/login\\/\\?reset_token=([A-Za-z0-9_-]{32,128})$/);
+  const match = value.match(/^(https:\/\/[^/?#]+)\/login\/\?reset_token=([A-Za-z0-9_-]{32,128})$/);
   if (!match) return false;
 
   const allowed = configuredOrigins
     .split(",")
-    .map(function (origin) { return origin.trim().replace(/\\/$/, ""); })
-    .filter(function (origin) { return /^https:\\/\\/[A-Za-z0-9.-]+$/.test(origin); });
+    .map(function (origin) { return origin.trim().replace(/\/$/, ""); })
+    .filter(function (origin) { return /^https:\/\/[A-Za-z0-9.-]+$/.test(origin); });
 
   return allowed.indexOf(match[1]) !== -1;
 }
