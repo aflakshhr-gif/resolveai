@@ -332,6 +332,7 @@ export default {
         if(!["approved","rejected"].includes(b?.status))return json({error:"Choose approve or reject."},400);
         const result=await env.DB.prepare("UPDATE membership_requests SET status=?,reviewed_by_user_id=?,reviewed_at=?,review_note=?,updated_at=? WHERE user_id=? AND status IN ('pending','rejected')").bind(b.status,session.user_id,new Date().toISOString(),typeof b.note==="string"?b.note.trim().slice(0,500):null,new Date().toISOString(),userId).run();
         if(!result.meta?.changes)return json({error:"Pending membership request not found."},404);
+        if(b.status==="approved")await env.DB.prepare("UPDATE workspace_members SET role='agent' WHERE user_id=? AND role='viewer'").bind(userId).run();
         return json({ok:true,status:b.status});
       }
       if(session.membership_status!=="approved")return json({error:"Complete your unit membership form and wait for block administrator approval.",membership_required:true},403);
