@@ -1,19 +1,17 @@
 /**
- * ResolveAI password-reset email bridge.
+ * ResolveAI email bridge for password recovery and new-account verification.
  *
- * Deploy this project as a Web App:
+ * Deploy as a Web App:
  *   Execute as: Me
  *   Who has access: Anyone
  *
- * Configure Script Properties:
- *   RESOLVEAI_SHARED_SECRET     - random secret shared with Cloudflare Worker
- *   RESOLVEAI_ALLOWED_ORIGINS   - comma-separated exact HTTPS origins, e.g.
- *     https://resolveai.aflakshhr.workers.dev,
- *     https://feature-unit-membership-approval-resolveai.aflakshhr.workers.dev
+ * Script Properties:
+ *   RESOLVEAI_SHARED_SECRET
+ *   RESOLVEAI_ALLOWED_ORIGINS
  *
- * This endpoint is public by necessity, but accepts requests only with the
- * shared secret. It sends mail only to a syntactically valid recipient and
- * only for reset URLs hosted on explicitly allowed ResolveAI origins.
+ * The public endpoint requires a long random secret. It only sends two fixed
+ * transactional message types and accepts links on explicitly allowed origins.
+ * Do not log request bodies, secrets, recipient addresses, or one-time tokens.
  */
 
 function doPost(e) {
@@ -40,33 +38,55 @@ function doPost(e) {
       return jsonResponse({ ok: false, error: "Invalid recipient." });
     }
 
-    const resetUrl = typeof payload.reset_url === "string" ? payload.reset_url : "";
-    if (!isAllowedResetUrl(resetUrl, props.getProperty("RESOLVEAI_ALLOWED_ORIGINS") || "")) {
-      return jsonResponse({ ok: false, error: "Invalid reset URL." });
+    const type = typeof payload.type === "string" ? payload.type : "";
+    const actionUrl = typeof payload.action_url === "string" ? payload.action_url : "";
+    if (!isAllowedActionUrl(actionUrl, type, props.getProperty("RESOLVEAI_ALLOWED_ORIGINS") || "")) {
+      return jsonResponse({ ok: false, error: "Invalid action URL." });
     }
 
     if (MailApp.getRemainingDailyQuota() < 1) {
       return jsonResponse({ ok: false, error: "Daily email quota exhausted." });
     }
 
-    const textBody =
-      "A password reset was requested for your ResolveAI account.\n\n" +
-      "Create a new password using this one-time link (valid for 30 minutes):\n" +
-      resetUrl +
-      "\n\nIf you did not request this change, you can ignore this email.";
-
-    const htmlBody =
-      '<div style="font-family:Arial,sans-serif;line-height:1.6;color:#172033">' +
-      "<h2>Reset your ResolveAI password</h2>" +
-      "<p>We received a request to create a new password for your ResolveAI account.</p>" +
-      '<p><a href="' + escapeHtml(resetUrl) +
-      '" style="display:inline-block;padding:12px 18px;background:#172033;color:#fff;text-decoration:none;border-radius:8px">Create a new password</a></p>' +
-      "<p>This link expires in 30 minutes and can be used once. If you did not request this change, you can ignore this email.</p>" +
-      "</div>";
+    let subject;
+    let textBody;
+    let htmlBody;
+    if (type === "password_reset") {
+      subject = "Reset your ResolveAI password";
+      textBody =
+        "A password reset was requested for your ResolveAI account.\n\n" +
+        "Create a new password using this one-time link (valid for 30 minutes):\n" +
+        actionUrl +
+        "\n\nIf you did not request this change, you can ignore this email.";
+      htmlBody =
+        '<div style="font-family:Arial,sans-serif;line-height:1.6;color:#172033">' +
+        "<h2>Reset your ResolveAI password</h2>" +
+        "<p>We received a request to create a new password for your ResolveAI account.</p>" +
+        '<p><a href="' + escapeHtml(actionUrl) +
+        '" style="display:inline-block;padding:12px 18px;background:#172033;color:#fff;text-decoration:none;border-radius:8px">Create a new password</a></p>' +
+        "<p>This link expires in 30 minutes and can be used once. If you did not request this change, you can ignore this email.</p>" +
+        "</div>";
+    } else if (type === "email_verification") {
+      subject = "Verify your ResolveAI email";
+      textBody =
+        "Verify your email address for ResolveAI using this one-time link (valid for 24 hours):\n" +
+        actionUrl +
+        "\n\nIf you did not create a ResolveAI account, you can ignore this email.";
+      htmlBody =
+        '<div style="font-family:Arial,sans-serif;line-height:1.6;color:#172033">' +
+        "<h2>Verify your email address</h2>" +
+        "<p>Confirm this email address to finish creating your ResolveAI account.</p>" +
+        '<p><a href="' + escapeHtml(actionUrl) +
+        '" style="display:inline-block;padding:12px 18px;background:#172033;color:#fff;text-decoration:none;border-radius:8px">Verify email address</a></p>' +
+        "<p>This link expires in 24 hours and can be used once. If you did not create a ResolveAI account, you can ignore this email.</p>" +
+        "</div>";
+    } else {
+      return jsonResponse({ ok: false, error: "Unsupported message type." });
+    }
 
     MailApp.sendEmail({
       to: recipient,
-      subject: "Reset your ResolveAI password",
+      subject: subject,
       body: textBody,
       htmlBody: htmlBody,
       name: "ResolveAI"
@@ -74,7 +94,6 @@ function doPost(e) {
 
     return jsonResponse({ ok: true });
   } catch (err) {
-    // Do not log the request body, secret, recipient, or reset token.
     console.error("ResolveAI mailer failed: " + (err && err.name ? err.name : "Error"));
     return jsonResponse({ ok: false, error: "Email delivery failed." });
   }
@@ -86,10 +105,17 @@ function isValidEmail(value) {
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
-function isAllowedResetUrl(value, configuredOrigins) {
+function isAllowedActionUrl(value, type, configuredOrigins) {
   if (typeof value !== "string" || value.length > 1200) return false;
-  const match = value.match(/^(https:\/\/[^/?#]+)\/login\/\?reset_token=([A-Za-z0-9_-]{32,128})$/);
+  const match = value.match(/^(https:\/\/[^/?#]+)\/login\/\?([a-z_]+)=([A-Za-z0-9_-]{32,128})$/);
   if (!match) return false;
+
+  const expectedParameter = type === "password_reset"
+    ? "reset_token"
+    : type === "email_verification"
+      ? "verify_token"
+      : "";
+  if (!expectedParameter || match[2] !== expectedParameter) return false;
 
   const allowed = configuredOrigins
     .split(",")
