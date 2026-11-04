@@ -337,3 +337,5 @@
 @media(prefers-reduced-motion:reduce){
   .rx-site *, .rx-site *:before, .rx-site *:after{scroll-behavior:auto!important;transition:none!important;animation:none!important}
 }
+
+.rx-draft-tag{display:inline-flex;align-items:center;width:max-content;margin-bottom:3px;padding:3px 5px;border-radius:4px;background:#fff3df;color:#a87c36;font-size:5px;font-weight:800;letter-spacing:.45px}
