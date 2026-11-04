@@ -803,3 +803,11 @@ button,input,textarea,select{accent-color:#269d96}
 .rx-admin-card{width:100%;max-width:none}
 .rx-admin-story .rx-auth-brand{margin-bottom:0}
 .rx-auth-shell .auth-footnote button{color:#2b928b;text-decoration:underline;text-underline-offset:3px}
+
+.rx-approval-launch-card{display:grid;grid-template-columns:54px minmax(0,1fr) auto;align-items:center;gap:16px;max-width:850px;margin-top:25px;padding:22px;border:1px solid #dfebe8;border-radius:16px;background:#fff;box-shadow:var(--rx-card-shadow)}
+.rx-approval-launch-icon{width:48px;height:48px;display:grid;place-items:center;border-radius:14px;background:#e7f5f1;color:#319b91}
+.rx-approval-launch-card>div>b{font-size:12px;color:#31545b}
+.rx-approval-launch-card>div>p{font-size:9px;line-height:1.75;color:#819699;margin:6px 0}
+.rx-approval-launch-card>div>small{font-size:8px;color:#a0aeae;line-height:1.6}
+.rx-approval-launch-card>.primary-btn{white-space:nowrap}
+@media(max-width:760px){.rx-approval-launch-card{grid-template-columns:43px minmax(0,1fr);gap:11px;padding:16px}.rx-approval-launch-icon{width:40px;height:40px}.rx-approval-launch-card>.primary-btn{grid-column:1/-1;justify-content:center}}
