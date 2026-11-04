@@ -82,7 +82,7 @@ export default function MembershipAdminPage(){
 
     <div style={{borderTop:"1px solid #e5e7eb",marginTop:28,paddingTop:22}}>
       <h2 style={{fontSize:18,margin:"0 0 8px"}}>Existing accounts not yet assigned ({legacyUsers.length})</h2>
-      <p className="auth-description">Assign one account at a time after checking the person’s actual unit code against your trusted resident records. No automatic grouping is performed.</p>
+      <p className="auth-description">Assign one account at a time after checking the person’s actual unit code against your trusted resident records. No automatic grouping is performed. This changes account access only; historical conversations are not automatically moved and remain in the main workspace until reviewed separately.</p>
       {legacyUsers.length===0?<p>There are no unmapped existing accounts in the main workspace.</p>:legacyUsers.map(user=><article key={user.user_id} style={{border:"1px solid #e5e7eb",borderRadius:12,padding:14,marginTop:12,textAlign:"left"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
           <div><b>{user.email}</b><p style={{margin:"4px 0",fontSize:13,color:"#64748b"}}>Current role: {user.role} · {user.workspace_name}</p></div>
