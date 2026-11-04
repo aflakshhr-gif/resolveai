@@ -134,6 +134,11 @@ export default function LoginPage() {
         : mode === "invite" ? { email, password, name, invite_token: inviteToken } : { email, password };
       const response = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), credentials: "same-origin" });
       const data = await readApiJson(response);
+      if (!response.ok && data.code === "EMAIL_NOT_VERIFIED") {
+        setMode("verify_pending");
+        setNotice(data.error || "Verify your email address before signing in.");
+        return;
+      }
       if (!response.ok) throw new Error([data.error || "Sign in failed.", data.code ? "Diagnostic: " + data.code : ""].filter(Boolean).join(" — "));
       if (mode === "register" && data.requires_email_verification) {
         setMode("verify_pending");
