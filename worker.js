@@ -101,6 +101,28 @@ CREATE TABLE IF NOT EXISTS password_reset_requests (
 );
 CREATE INDEX IF NOT EXISTS idx_password_reset_requests_email ON password_reset_requests(email_hash,created_at);
 CREATE INDEX IF NOT EXISTS idx_password_reset_requests_ip ON password_reset_requests(ip_hash,created_at);
+CREATE TABLE IF NOT EXISTS email_verification_tokens (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TEXT NOT NULL,
+  used_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_user ON email_verification_tokens(user_id,expires_at);
+CREATE TABLE IF NOT EXISTS email_verification_requests (
+  id TEXT PRIMARY KEY,
+  email_hash TEXT NOT NULL,
+  ip_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_email_verification_requests_email ON email_verification_requests(email_hash,created_at);
+CREATE INDEX IF NOT EXISTS idx_email_verification_requests_ip ON email_verification_requests(ip_hash);
+CREATE TABLE IF NOT EXISTS user_email_verification_status (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  verified_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
 `;
 let schemaPromise;
 async function ensureSchema(env) {
@@ -223,6 +245,51 @@ async function newSession(env,userId) {
     .bind(crypto.randomUUID(),userId,await digest(token),new Date(Date.now()+SESSION_SECONDS*1000).toISOString()).run();
   return token;
 }
+
+function emailDeliveryConfigured(env) {
+  return Boolean(
+    (env.GOOGLE_APPS_SCRIPT_URL && env.GOOGLE_APPS_SCRIPT_TOKEN) ||
+    ((env.EMAIL?.send || env.RESEND_API_KEY) && env.RESOLVEAI_FROM_EMAIL)
+  );
+}
+async function sendResolveAIEmail(env, {to, type, actionUrl, subject, text, html, idempotencyKey}) {
+  if (env.GOOGLE_APPS_SCRIPT_URL && env.GOOGLE_APPS_SCRIPT_TOKEN) {
+    const delivery = await fetch(env.GOOGLE_APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      redirect: "follow",
+      body: JSON.stringify({
+        secret: env.GOOGLE_APPS_SCRIPT_TOKEN,
+        to,
+        type,
+        action_url: actionUrl
+      })
+    });
+    const responseText = await delivery.text();
+    let responseData = null;
+    try { responseData = JSON.parse(responseText); } catch {}
+    if (!delivery.ok || !responseData?.ok) throw new Error("Google Apps Script email delivery failed");
+    return;
+  }
+
+  if (!env.RESOLVEAI_FROM_EMAIL) throw new Error("Transactional email sender is not configured");
+  const message = {from: env.RESOLVEAI_FROM_EMAIL, to, subject, text, html};
+  if (env.EMAIL?.send) {
+    await env.EMAIL.send(message);
+    return;
+  }
+  const delivery = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      "Authorization": "Bearer " + env.RESEND_API_KEY,
+      "Content-Type": "application/json",
+      "User-Agent": "ResolveAI/1.0",
+      "Idempotency-Key": idempotencyKey
+    },
+    body: JSON.stringify({...message, to: [to]})
+  });
+  if (!delivery.ok) throw new Error("Resend email delivery failed with HTTP " + delivery.status);
+}
 async function auth(request,env,path) {
   if(path==="/api/auth/status"&&request.method==="GET"){
     if(!env.DB)return json({error:"Database binding DB is not configured."},503);
@@ -243,8 +310,7 @@ async function auth(request,env,path) {
     if(!env.DB)return json({error:"Database binding DB is not configured."},503);
     await ensureSchema(env);
     if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
-    const googleAppsScriptConfigured=Boolean(env.GOOGLE_APPS_SCRIPT_URL&&env.GOOGLE_APPS_SCRIPT_TOKEN);
-    if(!googleAppsScriptConfigured&&((!env.EMAIL?.send&&!env.RESEND_API_KEY)||!env.RESOLVEAI_FROM_EMAIL))return json({error:"Password reset email is not configured yet. Please contact the site administrator."},503);
+    if(!emailDeliveryConfigured(env))return json({error:"Password reset email is not configured yet. Please contact the site administrator."},503);
     const b=await body(request),email=validEmail(b?.email)?b.email.trim().toLowerCase():null;
     if(!email)return json({error:"Enter a valid email address."},400);
 
@@ -281,51 +347,16 @@ async function auth(request,env,path) {
     await env.DB.prepare("INSERT INTO password_reset_tokens (id,user_id,token_hash,expires_at) VALUES (?,?,?,?)")
       .bind(crypto.randomUUID(),user.id,tokenHash,expiresAt).run();
     const resetUrl=new URL("/login/?reset_token="+encodeURIComponent(resetToken),publicOrigin).toString();
-    const html="<div style='font-family:Arial,sans-serif;line-height:1.6;color:#172033'><h2>Reset your ResolveAI password</h2><p>We received a request to create a new password for your ResolveAI account.</p><p><a href='"+resetUrl+"' style='display:inline-block;padding:12px 18px;background:#172033;color:#fff;text-decoration:none;border-radius:8px'>Create a new password</a></p><p>This link expires in 30 minutes and can be used once. If you did not request this change, you can ignore this email.</p></div>";
     try {
-      if(googleAppsScriptConfigured){
-        // Google Apps Script sends from the Gmail account that owns the script.
-        // The shared token is held only in Cloudflare Secret + Apps Script Script Properties.
-        const delivery=await fetch(env.GOOGLE_APPS_SCRIPT_URL,{
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
-          redirect:"follow",
-          body:JSON.stringify({
-            secret:env.GOOGLE_APPS_SCRIPT_TOKEN,
-            to:user.email,
-            reset_url:resetUrl
-          })
-        });
-        const responseText=await delivery.text();
-        let responseData=null;
-        try{responseData=JSON.parse(responseText);}catch{}
-        if(!delivery.ok||!responseData?.ok)throw new Error("Google Apps Script email delivery failed");
-      }else{
-        const message={
-          from:env.RESOLVEAI_FROM_EMAIL,
-          to:user.email,
-          subject:"Reset your ResolveAI password",
-          html,
-          text:"Reset your ResolveAI password using this link: "+resetUrl+"\\n\\nThe link expires in 30 minutes and can be used once. If you did not request this change, ignore this email."
-        };
-        if(env.EMAIL?.send){
-          // Cloudflare Email Service remains available as a secondary provider.
-          await env.EMAIL.send(message);
-        }else{
-          // Resend remains available as an optional provider fallback.
-          const delivery=await fetch("https://api.resend.com/emails",{
-            method:"POST",
-            headers:{
-              "Authorization":"Bearer "+env.RESEND_API_KEY,
-              "Content-Type":"application/json",
-              "User-Agent":"ResolveAI/1.0",
-              "Idempotency-Key":"resolveai-password-reset-"+tokenHash
-            },
-            body:JSON.stringify({...message,to:[user.email]})
-          });
-          if(!delivery.ok)throw new Error("Resend email delivery failed with HTTP "+delivery.status);
-        }
-      }
+      await sendResolveAIEmail(env,{
+        to:user.email,
+        type:"password_reset",
+        actionUrl:resetUrl,
+        subject:"Reset your ResolveAI password",
+        text:"Reset your ResolveAI password using this link: "+resetUrl+"\\n\\nThe link expires in 30 minutes and can be used once. If you did not request this change, ignore this email.",
+        html:"<div style='font-family:Arial,sans-serif;line-height:1.6;color:#172033'><h2>Reset your ResolveAI password</h2><p>We received a request to create a new password for your ResolveAI account.</p><p><a href='"+resetUrl+"'>Create a new password</a></p><p>This link expires in 30 minutes and can be used once. If you did not request this change, you can ignore this email.</p></div>",
+        idempotencyKey:"resolveai-password-reset-"+tokenHash
+      });
     } catch(error) {
       await env.DB.prepare("DELETE FROM password_reset_tokens WHERE token_hash=?").bind(tokenHash).run();
       console.error("ResolveAI password-reset email request failed",{name:error?.name||"Error"});
@@ -389,6 +420,7 @@ async function auth(request,env,path) {
   if(path==="/api/auth/register"&&request.method==="POST"){
     await ensureSchema(env);
     if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
+    if(!emailDeliveryConfigured(env))return json({error:"Email verification is not configured yet. Please contact the site administrator."},503);
     const b=await body(request);
     if(!b||!validEmail(b.email)||!validPassword(b.password))return json({error:"Enter a valid email and a password with at least 12 characters."},400);
     const ip=request.headers.get("CF-Connecting-IP")||"unknown",key="register:"+ip,now=Date.now();
@@ -399,13 +431,122 @@ async function auth(request,env,path) {
     if(exists)return json({error:"An account with this email already exists. Please sign in."},409);
     const workspace=await env.DB.prepare("SELECT id FROM workspaces ORDER BY created_at LIMIT 1").first();
     if(!workspace)return json({error:"The site administrator must complete initial setup before public registration."},503);
+    let publicOrigin;
+    try {
+      const publicUrl=new URL(String(env.RESOLVEAI_PUBLIC_URL||""));
+      if(publicUrl.protocol!=="https:"||publicUrl.username||publicUrl.password||publicUrl.search||publicUrl.hash)throw new Error("Invalid public URL");
+      publicOrigin=publicUrl.origin;
+    } catch {
+      return json({error:"Email verification is not configured correctly. Please contact the site administrator."},503);
+    }
+
     const id=crypto.randomUUID(),pw=await passwordHash(b.password);
+    const verificationToken=randomToken(),tokenHash=await digest(verificationToken);
+    const expiresAt=new Date(now+24*60*60*1000).toISOString();
     await env.DB.batch([
-      env.DB.prepare("INSERT INTO users (id,email,password_hash,password_salt) VALUES (?,?,?,?)").bind(id,b.email.trim().toLowerCase(),pw.hash,pw.salt),
+      env.DB.prepare("INSERT INTO users (id,email,password_hash,password_salt,email_verified_at) VALUES (?,?,?,?,NULL)").bind(id,b.email.trim().toLowerCase(),pw.hash,pw.salt),
       env.DB.prepare("INSERT INTO workspace_members (workspace_id,user_id,role) VALUES (?,?,'viewer')").bind(workspace.id,id),
-      env.DB.prepare("INSERT INTO membership_requests (user_id,status) VALUES (?,'not_submitted')").bind(id)
+      env.DB.prepare("INSERT INTO membership_requests (user_id,status) VALUES (?,'not_submitted')").bind(id),
+      env.DB.prepare("INSERT INTO user_email_verification_status (user_id,verified_at) VALUES (?,NULL)").bind(id),
+      env.DB.prepare("INSERT INTO email_verification_tokens (id,user_id,token_hash,expires_at) VALUES (?,?,?,?)").bind(crypto.randomUUID(),id,tokenHash,expiresAt)
     ]);
-    return json({ok:true,requires_membership:true},201,{"set-cookie":cookie(await newSession(env,id))});
+    const actionUrl=new URL("/login/?verify_token="+encodeURIComponent(verificationToken),publicOrigin).toString();
+    try {
+      await sendResolveAIEmail(env,{
+        to:b.email.trim().toLowerCase(),
+        type:"email_verification",
+        actionUrl,
+        subject:"Verify your ResolveAI email",
+        text:"Verify your email address for ResolveAI using this one-time link (valid for 24 hours): "+actionUrl,
+        html:"<p>Verify your email address for ResolveAI.</p><p><a href='"+actionUrl+"'>Verify email address</a></p><p>This link expires in 24 hours and can be used once.</p>",
+        idempotencyKey:"resolveai-email-verification-"+tokenHash
+      });
+    } catch(error) {
+      await env.DB.prepare("DELETE FROM users WHERE id=?").bind(id).run();
+      console.error("ResolveAI email verification delivery failed",{name:error?.name||"Error"});
+      return json({error:"The verification email could not be sent. Please retry registration later."},503);
+    }
+    return json({ok:true,requires_email_verification:true,message:"Check your inbox for a verification link. The link expires in 24 hours."},201);
+  }
+
+  if(path==="/api/auth/email-verification/request"&&request.method==="POST"){
+    if(!env.DB)return json({error:"Database binding DB is not configured."},503);
+    await ensureSchema(env);
+    if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
+    if(!emailDeliveryConfigured(env))return json({error:"Email verification is not configured yet. Please contact the site administrator."},503);
+    const b=await body(request),email=validEmail(b?.email)?b.email.trim().toLowerCase():null;
+    if(!email)return json({error:"Enter a valid email address."},400);
+    let publicOrigin;
+    try {
+      const publicUrl=new URL(String(env.RESOLVEAI_PUBLIC_URL||""));
+      if(publicUrl.protocol!=="https:"||publicUrl.username||publicUrl.password||publicUrl.search||publicUrl.hash)throw new Error("Invalid public URL");
+      publicOrigin=publicUrl.origin;
+    } catch {
+      return json({error:"Email verification is not configured correctly. Please contact the site administrator."},503);
+    }
+
+    const now=Date.now(),nowIso=new Date(now).toISOString(),windowStart=new Date(now-15*60*1000).toISOString();
+    const emailHash=await digest(email),ipHash=await digest(request.headers.get("CF-Connecting-IP")||"unknown");
+    await env.DB.prepare("DELETE FROM email_verification_requests WHERE created_at<?").bind(new Date(now-24*60*60*1000).toISOString()).run();
+    const [emailAttempts,ipAttempts]=await Promise.all([
+      env.DB.prepare("SELECT COUNT(*) AS total FROM email_verification_requests WHERE email_hash=? AND created_at>?").bind(emailHash,windowStart).first(),
+      env.DB.prepare("SELECT COUNT(*) AS total FROM email_verification_requests WHERE ip_hash=? AND created_at>?").bind(ipHash,windowStart).first()
+    ]);
+    const genericMessage="If this account requires email verification, a new link will be sent shortly.";
+    if(Number(emailAttempts?.total||0)>=3||Number(ipAttempts?.total||0)>=10)return json({ok:true,message:genericMessage});
+    await env.DB.prepare("INSERT INTO email_verification_requests (id,email_hash,ip_hash,created_at) VALUES (?,?,?,?)")
+      .bind(crypto.randomUUID(),emailHash,ipHash,nowIso).run();
+    const user=await env.DB.prepare("SELECT u.id,u.email,s.verified_at FROM users u JOIN user_email_verification_status s ON s.user_id=u.id WHERE u.email=? COLLATE NOCASE").bind(email).first();
+    if(!user||user.verified_at)return json({ok:true,message:genericMessage});
+
+    await env.DB.prepare("DELETE FROM email_verification_tokens WHERE user_id=?").bind(user.id).run();
+    const verificationToken=randomToken(),tokenHash=await digest(verificationToken),expiresAt=new Date(now+24*60*60*1000).toISOString();
+    await env.DB.prepare("INSERT INTO email_verification_tokens (id,user_id,token_hash,expires_at) VALUES (?,?,?,?)")
+      .bind(crypto.randomUUID(),user.id,tokenHash,expiresAt).run();
+    const actionUrl=new URL("/login/?verify_token="+encodeURIComponent(verificationToken),publicOrigin).toString();
+    try {
+      await sendResolveAIEmail(env,{
+        to:user.email,
+        type:"email_verification",
+        actionUrl,
+        subject:"Verify your ResolveAI email",
+        text:"Verify your email address for ResolveAI using this one-time link (valid for 24 hours): "+actionUrl,
+        html:"<p>Verify your email address for ResolveAI.</p><p><a href='"+actionUrl+"'>Verify email address</a></p><p>This link expires in 24 hours and can be used once.</p>",
+        idempotencyKey:"resolveai-email-verification-"+tokenHash
+      });
+    } catch(error) {
+      await env.DB.prepare("DELETE FROM email_verification_tokens WHERE token_hash=?").bind(tokenHash).run();
+      console.error("ResolveAI email verification resend failed",{name:error?.name||"Error"});
+      return json({ok:true,message:genericMessage});
+    }
+    return json({ok:true,message:genericMessage});
+  }
+
+  if(path==="/api/auth/email-verification/complete"&&request.method==="POST"){
+    if(!env.DB)return json({error:"Database binding DB is not configured."},503);
+    await ensureSchema(env);
+    if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
+    const b=await body(request);
+    if(typeof b?.token!=="string"||b.token.length<32||b.token.length>128)
+      return json({error:"This verification link is invalid or expired. Request a new one."},400);
+    const tokenHash=await digest(b.token),now=new Date().toISOString();
+    const record=await env.DB.prepare("SELECT id,user_id FROM email_verification_tokens WHERE token_hash=? AND used_at IS NULL AND expires_at>?")
+      .bind(tokenHash,now).first();
+    if(!record)return json({error:"This verification link is invalid or expired. Request a new one."},400);
+    const result=await env.DB.batch([
+      env.DB.prepare("UPDATE email_verification_tokens SET used_at=? WHERE id=? AND used_at IS NULL AND expires_at>?")
+        .bind(now,record.id,now),
+      env.DB.prepare("UPDATE user_email_verification_status SET verified_at=? WHERE user_id=? AND verified_at IS NULL AND EXISTS (SELECT 1 FROM email_verification_tokens WHERE id=? AND used_at=?)")
+        .bind(now,record.user_id,record.id,now),
+      env.DB.prepare("UPDATE users SET email_verified_at=? WHERE id=? AND EXISTS (SELECT 1 FROM user_email_verification_status WHERE user_id=? AND verified_at=?)")
+        .bind(now,record.user_id,record.user_id,now),
+      env.DB.prepare("DELETE FROM email_verification_tokens WHERE user_id=? AND id<>?")
+        .bind(record.user_id,record.id)
+    ]);
+    if(!result[0]?.meta?.changes||!result[1]?.meta?.changes)
+      return json({error:"This verification link is invalid or has already been used. Request a new one."},400);
+    const sessionToken=await newSession(env,record.user_id);
+    return json({ok:true,requires_membership:true},200,{"set-cookie":cookie(sessionToken)});
   }
   if(path==="/api/auth/login"&&request.method==="POST"){
     let loginStage="request_validation";
@@ -418,11 +559,19 @@ async function auth(request,env,path) {
       if(attempts.length>=10)return json({error:"Too many sign-in attempts. Wait a minute and try again."},429);
       attempts.push(now);requestWindows.set(key,attempts);
       loginStage="account_lookup";
-      const u=await env.DB.prepare("SELECT id,password_hash,password_salt FROM users WHERE email=? COLLATE NOCASE").bind(b.email.trim()).first();
+      const u=await env.DB.prepare("SELECT id,password_hash,password_salt,email_verified_at FROM users WHERE email=? COLLATE NOCASE").bind(b.email.trim()).first();
       if(!u)return json({error:"Email or password is incorrect."},401);
       loginStage="password_verification";
       const pw=await passwordHash(b.password,u.password_salt);
       if(!equal(pw.hash,u.password_hash))return json({error:"Email or password is incorrect."},401);
+      try {
+        const verification=await env.DB.prepare("SELECT verified_at FROM user_email_verification_status WHERE user_id=?").bind(u.id).first();
+        if(verification&&!verification.verified_at)return json({error:"Verify your email address before signing in. Check your inbox or request a new verification link.",code:"EMAIL_NOT_VERIFIED"},403);
+      } catch(error) {
+        const message=String(error?.message||error||"").toLowerCase();
+        if(!message.includes("no such table")||!message.includes("user_email_verification_status"))throw error;
+        // Older databases without the verification table keep legacy sign-in behavior.
+      }
       loginStage="session_creation";
       const sessionToken=await newSession(env,u.id);
       if(request.headers.get("X-ResolveAI-Client")==="mobile")return json({ok:true,access_token:sessionToken,expires_in:SESSION_SECONDS});
