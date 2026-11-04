@@ -1,12 +1,23 @@
+import Link from "next/link";
+import { ArrowLeft, LifeBuoy, RefreshCw, WifiOff } from "lucide-react";
+
 export default function OfflinePage() {
   return (
-    <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24, background: "#f7f8fc", color: "#252d40", fontFamily: "Arial, sans-serif" }}>
-      <section style={{ maxWidth: 420, textAlign: "center", background: "#fff", border: "1px solid #eceef3", borderRadius: 16, padding: 32 }}>
-        <div style={{ fontSize: 36, color: "#635bff" }}>✳</div>
-        <h1>You're offline</h1>
-        <p style={{ color: "#737d90", lineHeight: 1.6 }}>ResolveAI cannot reach the network right now. Check your connection and try again.</p>
-        <a href="/" style={{ color: "#635bff", fontWeight: 700 }}>Try again</a>
+    <main className="rx-offline-page">
+      <div className="rx-offline-glow" aria-hidden="true"/>
+      <header className="rx-offline-brand">
+        <span><LifeBuoy size={19}/></span>
+        <b>Resolve<span>AI</span></b>
+      </header>
+      <section className="rx-offline-card">
+        <div className="rx-offline-icon"><WifiOff size={27}/></div>
+        <span className="rx-section-kicker">CONNECTION INTERRUPTED</span>
+        <h1>You're offline<br/><em>for the moment.</em></h1>
+        <p>ResolveAI cannot reach the network right now. Your workspace data is protected. Check your connection, then try loading the page again.</p>
+        <button type="button" className="rx-offline-retry" onClick={()=>window.location.reload()}><RefreshCw size={15}/> Try again</button>
+        <Link href="/website/" className="rx-offline-home"><ArrowLeft size={14}/> Back to ResolveAI website</Link>
       </section>
+      <footer className="rx-offline-footer">ResolveAI · Private support workspace</footer>
     </main>
   );
 }
