@@ -438,7 +438,7 @@ export default {
         const blockAdmin=await isBlockAdmin(env,session.user_id);
         if(blockAdmin){
           await env.DB.prepare(`INSERT INTO workspace_members (workspace_id,user_id,role)
-            SELECT workspace_id,?,'admin' FROM unit_workspaces
+            SELECT workspace_id,?,'admin' FROM unit_workspaces WHERE 1
             ON CONFLICT(workspace_id,user_id) DO UPDATE SET role=CASE WHEN workspace_members.role='owner' THEN 'owner' ELSE 'admin' END`).bind(session.user_id).run();
         }
         const rows=await env.DB.prepare(`SELECT w.id,w.name,uw.unit_code,wm.role
