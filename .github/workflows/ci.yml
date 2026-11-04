@@ -14,7 +14,9 @@ jobs:
       - name: Validate Worker JavaScript syntax
         run: node --check worker.js
       - name: Validate smoke-test shell syntax
-        run: bash -n scripts/check-resolveai.sh
+        run: bash -n scripts/check-resolveai.sh scripts/check-preview-health.sh
+      - name: Verify runtime D1 schema batching
+        run: node scripts/test-d1-schema-batch.mjs
       - name: Validate dedicated D1 schema migrations
         run: |
           cat migrations/0001_initial.sql migrations/0002_team_invites.sql | sqlite3 :memory:
@@ -29,9 +31,13 @@ jobs:
         with:
           node-version: 22
       - run: npm install
+      - name: Verify legacy password hash compatibility
+        run: node scripts/test-password-hash-compat.mjs
       - run: npx tsc --noEmit
       - run: npm run build
       - run: npx --yes wrangler@latest deploy --dry-run
+      - name: Verify deployed preview and read-only D1 connectivity
+        run: bash scripts/check-preview-health.sh
 
   mobile:
     name: Expo mobile validation

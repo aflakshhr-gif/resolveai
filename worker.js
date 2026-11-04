@@ -1,3 +1,5 @@
+import { pbkdf2Async } from "@noble/hashes/pbkdf2.js";
+import { sha256 } from "@noble/hashes/sha2.js";
 const requestWindows = new Map();
 const COOKIE = "resolveai_session";
 const SESSION_SECONDS = 604800;
@@ -60,7 +62,11 @@ let schemaPromise;
 async function ensureSchema(env) {
   if (!env.DB) throw new Error("Database binding DB is not configured.");
   if (!schemaPromise) {
-    schemaPromise = env.DB.exec(SCHEMA_SQL).catch(error => { schemaPromise = null; throw error; });
+    // D1 exec() is not a reliable way to submit this multi-statement schema.
+    // Prepare and batch each statement to avoid Worker exceptions on page load.
+    const statements = SCHEMA_SQL.split(';').map(statement => statement.trim()).filter(Boolean);
+    schemaPromise = env.DB.batch(statements.map(statement => env.DB.prepare(statement)))
+      .catch(error => { schemaPromise = null; throw error; });
   }
   await schemaPromise;
 }
@@ -74,13 +80,38 @@ function getCookie(request) {
 function randomToken() { const b = crypto.getRandomValues(new Uint8Array(32)); let s = ""; for (const n of b) s += String.fromCharCode(n); return btoa(s).replace(/=/g,"").replace(/\+/g,"-").replace(/\//g,"_"); }
 async function digest(value) { const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)); let s=""; for(const n of new Uint8Array(b)) s+=String.fromCharCode(n); return btoa(s).replace(/=/g,"").replace(/\+/g,"-").replace(/\//g,"_"); }
 function equal(a,b) { if(typeof a!=="string"||typeof b!=="string"||a.length!==b.length)return false; let n=0; for(let i=0;i<a.length;i++)n|=a.charCodeAt(i)^b.charCodeAt(i); return n===0; }
-function decode64url(s) { const b=atob(s.replace(/-/g,"+").replace(/_/g,"/")+"=".repeat((4-s.length%4)%4)); return Uint8Array.from(b,c=>c.charCodeAt(0)); }
+function decode64url(s) {
+  const normalized=String(s).replace(/-/g,"+").replace(/_/g,"/").replace(/=+$/,"");
+  const b=atob(normalized+"=".repeat((4-normalized.length%4)%4));
+  return Uint8Array.from(b,c=>c.charCodeAt(0));
+}
 async function passwordHash(password, saltText) {
-  const salt = saltText ? decode64url(saltText) : crypto.getRandomValues(new Uint8Array(16));
-  const key = await crypto.subtle.importKey("raw",new TextEncoder().encode(password),"PBKDF2",false,["deriveBits"]);
-  const bits = await crypto.subtle.deriveBits({name:"PBKDF2",hash:"SHA-256",salt,iterations:310000},key,256);
-  let s=""; for(const n of new Uint8Array(bits))s+=String.fromCharCode(n);
-  return {hash:btoa(s).replace(/=/g,"").replace(/\+/g,"-").replace(/\//g,"_"),salt:(()=>{let v="";for(const n of salt)v+=String.fromCharCode(n);return btoa(v).replace(/=/g,"").replace(/\+/g,"-").replace(/\//g,"_")})()};
+  let stage = "salt_decode";
+  try {
+    const salt = saltText ? decode64url(saltText) : crypto.getRandomValues(new Uint8Array(16));
+    if (!(salt instanceof Uint8Array) || salt.length < 8 || salt.length > 64) throw new Error("Invalid stored salt length");
+    stage = "pbkdf2_noble";
+    // Preserve the existing PBKDF2-SHA256/310,000 hash format on Cloudflare.
+    const bits = await pbkdf2Async(
+      sha256,
+      new TextEncoder().encode(String(password)),
+      salt,
+      { c: 310000, dkLen: 32 }
+    );
+    stage = "hash_encoding";
+    if (!bits || bits.length !== 32) throw new Error("PBKDF2 returned an unexpected key length");
+    let encoded=""; for(const n of bits)encoded+=String.fromCharCode(n);
+    let saltBinary=""; for(const n of salt)saltBinary+=String.fromCharCode(n);
+    return {
+      hash:btoa(encoded).replace(/=/g,"").replace(/\+/g,"-").replace(/\//g,"_"),
+      salt:btoa(saltBinary).replace(/=/g,"").replace(/\+/g,"-").replace(/\//g,"_")
+    };
+  } catch (error) {
+    const wrapped = new Error("Password verification failed during " + stage);
+    wrapped.code = "PASSWORD_" + stage.toUpperCase() + "_FAILED";
+    console.error("ResolveAI password hashing stage failed", {stage, name:error?.name || "Error"});
+    throw wrapped;
+  }
 }
 const validEmail = v => typeof v==="string" && v.length<=254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 const validPassword = v => typeof v==="string" && v.length>=12 && v.length<=128;
@@ -270,6 +301,17 @@ export default {
   async fetch(request,env) {
     const url=new URL(request.url),path=url.pathname.replace(/\/$/,"")||"/";
     if(path==="/api/health"&&request.method==="GET")return json({service:"ResolveAI",status:"ok",mode:"private-team",database_configured:Boolean(env.DB)});
+    if(path==="/api/health/db"&&request.method==="GET"){
+      if(!env.DB)return json({service:"ResolveAI",status:"error",database:"not_configured"},503);
+      try {
+        const probe=await env.DB.prepare("SELECT 1 AS ok").first();
+        if(Number(probe?.ok)!==1)throw new Error("Unexpected D1 probe result");
+        return json({service:"ResolveAI",status:"ok",database:"reachable"});
+      } catch(error) {
+        console.error("ResolveAI read-only D1 health probe failed",error);
+        return json({service:"ResolveAI",status:"error",database:"unreachable"},503);
+      }
+    }
     if(path.startsWith("/api/auth/")){const result=await auth(request,env,path);if(result)return result;}
     if(path.startsWith("/api/")){
       if(!env.DB)return json({error:"Database binding DB is not configured."},503);
