@@ -8,3 +8,7 @@ CREATE TABLE IF NOT EXISTS block_admins (
 
 INSERT OR IGNORE INTO block_admins (user_id)
 SELECT owner_user_id FROM workspaces ORDER BY created_at LIMIT 1;
+INSERT OR IGNORE INTO block_admins (user_id)
+SELECT user_id FROM workspace_members
+WHERE workspace_id=(SELECT id FROM workspaces ORDER BY created_at LIMIT 1)
+  AND role IN ('owner','admin');
