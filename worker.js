@@ -854,7 +854,8 @@ export default {
     if(path==="/login"){
       // Password-reset links must remain reachable even when the browser still
       // has a valid session cookie. The reset completion revokes old sessions.
-      if(new URL(request.url).searchParams.has("reset_token"))
+      const loginParams=new URL(request.url).searchParams;
+      if(loginParams.has("reset_token")||loginParams.has("verify_token"))
         return securePage(await env.ASSETS.fetch(request));
       const session=await sessionFor(request,env);
       return session?Response.redirect(new URL(session.membership_status==="approved"?"/":"/membership/",request.url),302):securePage(await env.ASSETS.fetch(request));
