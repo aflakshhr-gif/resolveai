@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { pbkdf2, webcrypto } from "node:crypto";
+import { pbkdf2Async } from "@noble/hashes/pbkdf2.js";
+import { sha256 } from "@noble/hashes/sha2.js";
 
 const password = "ResolveAI legacy compatibility test password";
 const salt = Buffer.from("00112233445566778899aabbccddeeff", "hex");
@@ -13,19 +15,27 @@ const nodeHash = await new Promise((resolve, reject) => {
   });
 });
 
-const cryptoKey = await webcrypto.subtle.importKey(
+const webKey = await webcrypto.subtle.importKey(
   "raw",
   new TextEncoder().encode(password),
   "PBKDF2",
   false,
   ["deriveBits"]
 );
-const webCryptoHash = Buffer.from(await webcrypto.subtle.deriveBits(
+const webHash = Buffer.from(await webcrypto.subtle.deriveBits(
   { name: "PBKDF2", hash: "SHA-256", salt, iterations },
-  cryptoKey,
+  webKey,
   expectedLength * 8
 ));
 
-assert.deepEqual(nodeHash, webCryptoHash);
-assert.equal(nodeHash.length, expectedLength);
-console.log("Node PBKDF2-SHA256 matches the legacy WebCrypto 310,000-iteration hash format.");
+const nobleHash = Buffer.from(await pbkdf2Async(
+  sha256,
+  new TextEncoder().encode(password),
+  new Uint8Array(salt),
+  { c: iterations, dkLen: expectedLength }
+));
+
+assert.deepEqual(nobleHash, nodeHash);
+assert.deepEqual(nobleHash, webHash);
+assert.equal(nobleHash.length, expectedLength);
+console.log("Noble PBKDF2-SHA256 matches Node and WebCrypto for the legacy 310,000-iteration format.");
