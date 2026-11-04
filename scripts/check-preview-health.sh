@@ -4,7 +4,7 @@ BASE_URL="${RESOLVEAI_URL:-https://hotfix-production-d1-batch-pbkdf2-resolveai.a
 BASE_URL="${BASE_URL%/}"
 FILE="$(mktemp)"
 trap 'rm -f "$FILE"' EXIT
-for attempt in $(seq 1 18); do
+for attempt in $(seq 1 36); do
   CODE="$(curl --silent --show-error --max-time 15 -o "$FILE" -w '%{http_code}' "$BASE_URL/api/health/db" 2>/dev/null || true)"
   if [[ "$CODE" == "200" ]]; then
     python3 - "$FILE" <<'PY'
@@ -18,9 +18,9 @@ print('PASS: Cloudflare preview Worker is online and D1 responds to read-only SE
 PY
     exit $?
   fi
-  echo "Preview health attempt ${attempt}/18 returned HTTP ${CODE:-no response}; retrying..."
+  echo "Health check attempt ${attempt}/36 returned HTTP ${CODE:-no response}; retrying..."
   sleep 5
 done
-echo "FAIL: Cloudflare preview did not pass read-only D1 health check."
+echo "FAIL: Cloudflare Worker did not pass read-only D1 health check."
 cat "$FILE" || true
 exit 1
