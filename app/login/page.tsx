@@ -48,7 +48,7 @@ export default function LoginPage() {
         ? { email, password, name, workspace_name: workspaceName, setup_token: setupToken }
         : mode === "invite" ? { email, password, name, invite_token: inviteToken } : { email, password };
       const response = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), credentials: "same-origin" });
-      const data = await response.json();
+      const data = await readApiJson(response);
       if (!response.ok) throw new Error(data.error || "Sign in failed.");
       router.replace("/");
       router.refresh();
