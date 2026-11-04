@@ -25,6 +25,14 @@ INSERT INTO workspace_members (workspace_id,user_id,role) VALUES
   ('main','unit-a1','viewer'),
   ('main','unit-a2','viewer'),
   ('main','unit-b1','viewer');
+INSERT INTO membership_requests (user_id,unit_code,status) VALUES
+  ('unit-a1','a101','pending'),
+  ('unit-a2','A101','pending'),
+  ('unit-b1','B202','pending');
+
+INSERT INTO unit_workspaces (unit_code,workspace_id) VALUES
+  ('A101','workspace-a'),
+  ('B202','workspace-b');
 -- Simulate an admin who was already present as a normal member in A101.
 INSERT INTO workspace_members (workspace_id,user_id,role)
 VALUES ('workspace-a','block-admin','agent');
@@ -34,14 +42,6 @@ SELECT workspace_id,'block-admin','admin' FROM unit_workspaces WHERE 1
 ON CONFLICT(workspace_id,user_id) DO UPDATE
 SET role=CASE WHEN workspace_members.role='owner' THEN 'owner' ELSE 'admin' END;
 
-INSERT INTO membership_requests (user_id,unit_code,status) VALUES
-  ('unit-a1','a101','pending'),
-  ('unit-a2','A101','pending'),
-  ('unit-b1','B202','pending');
-
-INSERT INTO unit_workspaces (unit_code,workspace_id) VALUES
-  ('A101','workspace-a'),
-  ('B202','workspace-b');
 
 UPDATE membership_requests SET status='approved' WHERE user_id='unit-a1';
 UPDATE membership_requests SET status='approved' WHERE user_id='unit-a2';
