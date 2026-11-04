@@ -94,17 +94,32 @@ async function digest(value) { const b = await crypto.subtle.digest("SHA-256", n
 function equal(a,b) { if(typeof a!=="string"||typeof b!=="string"||a.length!==b.length)return false; let n=0; for(let i=0;i<a.length;i++)n|=a.charCodeAt(i)^b.charCodeAt(i); return n===0; }
 function decode64url(s) { const normalized=String(s).replace(/-/g,"+").replace(/_/g,"/").replace(/=+$/,""); const b=atob(normalized+"=".repeat((4-normalized.length%4)%4)); return Uint8Array.from(b,c=>c.charCodeAt(0)); }
 async function passwordHash(password, saltText) {
-  const salt = saltText ? decode64url(saltText) : crypto.getRandomValues(new Uint8Array(16));
-  // node:crypto PBKDF2 preserves the existing SHA-256/310,000 format while
-  // avoiding the WebCrypto-specific 100,000-iteration ceiling in Workers.
-  const bits = await new Promise((resolve, reject) => {
-    pbkdf2(password, salt, 310000, 32, "sha256", (error, derivedKey) => {
-      if (error) reject(error);
-      else resolve(derivedKey);
+  let stage = "salt_decode";
+  try {
+    const salt = saltText ? decode64url(saltText) : crypto.getRandomValues(new Uint8Array(16));
+    if (!(salt instanceof Uint8Array) || salt.length < 8 || salt.length > 64) throw new Error("Invalid stored salt length");
+    stage = "pbkdf2";
+    // Keep the original PBKDF2-SHA256/310,000 format for existing account compatibility.
+    const bits = await new Promise((resolve, reject) => {
+      pbkdf2(String(password), Buffer.from(salt), 310000, 32, "sha256", (error, derivedKey) => {
+        if (error) reject(error);
+        else resolve(derivedKey);
+      });
     });
-  });
-  let s=""; for(const n of new Uint8Array(bits))s+=String.fromCharCode(n);
-  return {hash:btoa(s).replace(/=/g,"").replace(/\+/g,"-").replace(/\//g,"_"),salt:(()=>{let v="";for(const n of salt)v+=String.fromCharCode(n);return btoa(v).replace(/=/g,"").replace(/\+/g,"-").replace(/\//g,"_")})()};
+    stage = "hash_encoding";
+    if (!bits || bits.length !== 32) throw new Error("PBKDF2 returned an unexpected key length");
+    let encoded=""; for(const n of bits)encoded+=String.fromCharCode(n);
+    let saltBinary=""; for(const n of salt)saltBinary+=String.fromCharCode(n);
+    return {
+      hash:btoa(encoded).replace(/=/g,"").replace(/\+/g,"-").replace(/\//g,"_"),
+      salt:btoa(saltBinary).replace(/=/g,"").replace(/\+/g,"-").replace(/\//g,"_")
+    };
+  } catch (error) {
+    const wrapped = new Error("Password verification failed during " + stage);
+    wrapped.code = "PASSWORD_" + stage.toUpperCase() + "_FAILED";
+    console.error("ResolveAI password hashing stage failed", {stage, name:error?.name || "Error"});
+    throw wrapped;
+  }
 }
 const validEmail = v => typeof v==="string" && v.length<=254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 const validPassword = v => typeof v==="string" && v.length>=12 && v.length<=128;
