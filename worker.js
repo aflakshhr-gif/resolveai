@@ -301,6 +301,17 @@ export default {
   async fetch(request,env) {
     const url=new URL(request.url),path=url.pathname.replace(/\/$/,"")||"/";
     if(path==="/api/health"&&request.method==="GET")return json({service:"ResolveAI",status:"ok",mode:"private-team",database_configured:Boolean(env.DB)});
+    if(path==="/api/health/db"&&request.method==="GET"){
+      if(!env.DB)return json({service:"ResolveAI",status:"error",database:"not_configured"},503);
+      try {
+        const probe=await env.DB.prepare("SELECT 1 AS ok").first();
+        if(Number(probe?.ok)!==1)throw new Error("Unexpected D1 probe result");
+        return json({service:"ResolveAI",status:"ok",database:"reachable"});
+      } catch(error) {
+        console.error("ResolveAI read-only D1 health probe failed",error);
+        return json({service:"ResolveAI",status:"error",database:"unreachable"},503);
+      }
+    }
     if(path.startsWith("/api/auth/")){const result=await auth(request,env,path);if(result)return result;}
     if(path.startsWith("/api/")){
       if(!env.DB)return json({error:"Database binding DB is not configured."},503);
