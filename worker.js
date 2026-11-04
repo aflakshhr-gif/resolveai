@@ -132,8 +132,8 @@ async function sessionFor(request,env) {
   const authorization=request.headers.get("Authorization")||"";
   const bearer=authorization.startsWith("Bearer ")?authorization.slice(7).trim():null;
   const token=bearer||getCookie(request); if(!token||token.length>200)return null;
-  // Anonymous page requests do not need schema initialization or a D1 round trip.
-  await ensureSchema(env);
+  // Session validation only reads the existing login/session/workspace tables.
+  // Schema setup is deferred until an authenticated feature actually needs it.
   return await env.DB.prepare(`SELECT u.id AS user_id,u.email,w.id AS workspace_id,w.name AS workspace_name,wm.role,
     COALESCE(mr.status,'approved') AS membership_status
     FROM sessions s JOIN users u ON u.id=s.user_id JOIN workspace_members wm ON wm.user_id=u.id
@@ -396,6 +396,7 @@ export default {
       if(!env.DB)return json({error:"Database binding DB is not configured."},503);
       const session=await sessionFor(request,env);
       if(!session)return json({error:"Authentication required."},401);
+      if(path!=="/api/auth/me")await ensureSchema(env);
       if(path==="/api/auth/me"&&request.method==="GET")return json({user:{id:session.user_id,email:session.email},workspace:{id:session.workspace_id,name:session.workspace_name},role:session.role,membership_status:session.membership_status});
       if(path==="/api/membership"&&request.method==="GET"){
         const own=await env.DB.prepare("SELECT full_name,phone,identity_number,unit_code,unit_details,resident_type,payment_method,payment_reference,status,review_note,updated_at FROM membership_requests WHERE user_id=?").bind(session.user_id).first();
