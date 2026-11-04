@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-type Mode = "loading" | "login" | "setup" | "invite" | "unavailable";
+type Mode = "loading" | "login" | "register" | "setup" | "invite" | "unavailable";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -33,7 +33,7 @@ export default function LoginPage() {
     event.preventDefault();
     setBusy(true); setError("");
     try {
-      const endpoint = mode === "setup" ? "/api/auth/setup" : mode === "invite" ? "/api/auth/accept-invite" : "/api/auth/login";
+      const endpoint = mode === "setup" ? "/api/auth/setup" : mode === "invite" ? "/api/auth/accept-invite" : mode === "register" ? "/api/auth/register" : "/api/auth/login";
       const payload = mode === "setup"
         ? { email, password, name, workspace_name: workspaceName, setup_token: setupToken }
         : mode === "invite" ? { email, password, name, invite_token: inviteToken } : { email, password };
@@ -51,8 +51,8 @@ export default function LoginPage() {
     <section className="auth-card">
       <div className="auth-brand"><span className="auth-mark">✦</span><span>resolve<strong>ai</strong></span></div>
       <div className="auth-eyebrow">PRIVATE TEAM WORKSPACE</div>
-      <h1>{mode === "setup" ? "Create your workspace" : mode === "invite" ? "Join your team" : mode === "unavailable" ? "Workspace unavailable" : "Welcome back"}</h1>
-      <p className="auth-description">{mode === "setup" ? "Set up the owner account. Public registration is disabled." : mode === "invite" ? "Complete your account using the invitation from your workspace admin." : mode === "unavailable" ? "The workspace needs its database connection before you can sign in." : "Sign in to your private ResolveAI workspace."}</p>
+      <h1>{mode === "setup" ? "Create your workspace" : mode === "invite" ? "Join your team" : mode === "register" ? "Create your account" : mode === "unavailable" ? "Workspace unavailable" : "Welcome back"}</h1>
+      <p className="auth-description">{mode === "setup" ? "Set up the first administrator account." : mode === "invite" ? "Complete your account using the invitation from your workspace admin." : mode === "register" ? "Create an account first. Full private access is enabled only after your unit details are reviewed by the block administrator." : mode === "unavailable" ? "The workspace needs its database connection before you can sign in." : "Sign in to your ResolveAI account."}</p>
       {mode === "loading" ? <div className="auth-loading">Checking secure workspace…</div> : mode === "unavailable" ? <div className="auth-error">{error}</div> : <form onSubmit={submit} className="auth-form">
         {mode === "setup" || mode === "invite" ? <label>Your name<input value={name} onChange={e=>setName(e.target.value)} autoComplete="name" required maxLength={80} placeholder="Your name"/></label> : null}
         <label>Work email<input type="email" value={email} onChange={e=>setEmail(e.target.value)} autoComplete="username" required maxLength={254} placeholder="you@company.com"/></label>
@@ -62,9 +62,9 @@ export default function LoginPage() {
           <label>One-time setup code<input type="password" value={setupToken} onChange={e=>setSetupToken(e.target.value)} required autoComplete="off" placeholder="Cloudflare secret"/></label>
         </> : null}
         {error ? <div className="auth-error" role="alert">{error}</div> : null}
-        <button className="auth-submit" type="submit" disabled={busy}>{busy ? "Please wait…" : mode === "setup" ? "Create private workspace" : mode === "invite" ? "Join workspace" : "Sign in"}</button>
+        <button className="auth-submit" type="submit" disabled={busy}>{busy ? "Please wait…" : mode === "setup" ? "Create administrator account" : mode === "invite" ? "Join workspace" : mode === "register" ? "Create account" : "Sign in"}</button>
       </form>}
-      <div className="auth-footnote"><span className="auth-lock">●</span> Private access · Invite-only · No public sign-up</div>
+      {mode === "login" ? <button type="button" className="outline-btn" onClick={() => { setMode("register"); setError(""); }}>Create a public account</button> : mode === "register" ? <button type="button" className="outline-btn" onClick={() => { setMode("login"); setError(""); }}>Already have an account? Sign in</button> : null}\n      <div className="auth-footnote"><span className="auth-lock">●</span> Public entry · Private access after administrator approval</div>
     </section>
   </main>;
 }
