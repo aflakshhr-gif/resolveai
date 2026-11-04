@@ -454,11 +454,11 @@ export default {
           ORDER BY u.email COLLATE NOCASE LIMIT 500`).bind(root.id).all();
         return json({users:rows.results||[]});
       }
-      const legacyAssignment=path.match(/^\\/api\\/admin\\/legacy-members\\/([^/]+)$/);
-      if(legacyAssignment&&request.method==="PATCH"){
+      const legacyPrefix="/api/admin/legacy-members/";
+      if(path.startsWith(legacyPrefix)&&request.method==="PATCH"){
         if(!await isBlockAdmin(env,session.user_id))return json({error:"Only the block administrator can map existing accounts."},403);
         if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
-        const b=await body(request),userId=decodeURIComponent(legacyAssignment[1]);
+        const b=await body(request),userId=decodeURIComponent(path.slice(legacyPrefix.length));
         const unitCode=typeof b?.unit_code==="string"?b.unit_code.trim().toUpperCase():"";
         if(!/^[A-Z0-9][A-Z0-9._-]{0,31}$/.test(unitCode))return json({error:"Enter a valid unit code (1–32 letters, digits, dots, underscores or hyphens)."},400);
         const root=await env.DB.prepare("SELECT id FROM workspaces ORDER BY created_at LIMIT 1").first();
