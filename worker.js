@@ -194,7 +194,8 @@ async function ensureUnitWorkspace(env, unitCode, adminUserId) {
     }
   }
   if (!link?.workspace_id) throw new Error("Could not create the private unit workspace.");
-  await env.DB.prepare("INSERT OR IGNORE INTO workspace_members (workspace_id,user_id,role) VALUES (?,?,'admin')")
+  await env.DB.prepare(`INSERT INTO workspace_members (workspace_id,user_id,role) VALUES (?,?,'admin')
+    ON CONFLICT(workspace_id,user_id) DO UPDATE SET role=CASE WHEN workspace_members.role='owner' THEN 'owner' ELSE 'admin' END`)
     .bind(link.workspace_id,adminUserId).run();
   return link.workspace_id;
 }
@@ -436,8 +437,9 @@ export default {
       if(path==="/api/workspaces"&&request.method==="GET"){
         const blockAdmin=await isBlockAdmin(env,session.user_id);
         if(blockAdmin){
-          await env.DB.prepare(`INSERT OR IGNORE INTO workspace_members (workspace_id,user_id,role)
-            SELECT workspace_id,?,'admin' FROM unit_workspaces`).bind(session.user_id).run();
+          await env.DB.prepare(`INSERT INTO workspace_members (workspace_id,user_id,role)
+            SELECT workspace_id,?,'admin' FROM unit_workspaces
+            ON CONFLICT(workspace_id,user_id) DO UPDATE SET role=CASE WHEN workspace_members.role='owner' THEN 'owner' ELSE 'admin' END`).bind(session.user_id).run();
         }
         const rows=await env.DB.prepare(`SELECT w.id,w.name,uw.unit_code,wm.role
           FROM workspace_members wm JOIN workspaces w ON w.id=wm.workspace_id
