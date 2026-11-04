@@ -4,11 +4,13 @@
   "compatibility_date": "2026-11-02",
   "workers_dev": true,
   "vars": {
-    "RESOLVEAI_PUBLIC_URL": "https://resolveai.aflakshhr.workers.dev"
+    "RESOLVEAI_PUBLIC_URL": "https://resolveai.aflakshhr.workers.dev",
+    "GOOGLE_APPS_SCRIPT_URL": "https://script.google.com/macros/s/AKfycbxo-ypfSwbZYHnC4oR5e3jR3qeNmdLTCdVDdT5BcAKKZzNb-Du9zW5eG7dSyyqrAIR4/exec"
   },
   "previews": {
     "vars": {
-      "RESOLVEAI_PUBLIC_URL": "https://feature-unit-membership-approval-resolveai.aflakshhr.workers.dev"
+      "RESOLVEAI_PUBLIC_URL": "https://feature-unit-membership-approval-resolveai.aflakshhr.workers.dev",
+      "GOOGLE_APPS_SCRIPT_URL": "https://script.google.com/macros/s/AKfycbxo-ypfSwbZYHnC4oR5e3jR3qeNmdLTCdVDdT5BcAKKZzNb-Du9zW5eG7dSyyqrAIR4/exec"
     },
     "send_email": [
       {
