@@ -64,7 +64,8 @@ export default function LoginPage() {
         {error ? <div className="auth-error" role="alert">{error}</div> : null}
         <button className="auth-submit" type="submit" disabled={busy}>{busy ? "Please wait…" : mode === "setup" ? "Create administrator account" : mode === "invite" ? "Join workspace" : mode === "register" ? "Create account" : "Sign in"}</button>
       </form>}
-      {mode === "login" ? <button type="button" className="outline-btn" onClick={() => { setMode("register"); setError(""); }}>Create a public account</button> : mode === "register" ? <button type="button" className="outline-btn" onClick={() => { setMode("login"); setError(""); }}>Already have an account? Sign in</button> : null}\n      <div className="auth-footnote"><span className="auth-lock">●</span> Public entry · Private access after administrator approval</div>
+      {mode === "login" ? <button type="button" className="outline-btn" onClick={() => { setMode("register"); setError(""); }}>Create a public account</button> : mode === "register" ? <button type="button" className="outline-btn" onClick={() => { setMode("login"); setError(""); }}>Already have an account? Sign in</button> : null}
+      <div className="auth-footnote"><span className="auth-lock">●</span> Public entry · Private access after approval</div>
     </section>
   </main>;
 }
