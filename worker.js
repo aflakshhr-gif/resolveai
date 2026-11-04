@@ -83,6 +83,24 @@ INSERT OR IGNORE INTO block_admins (user_id)
 SELECT user_id FROM workspace_members
 WHERE workspace_id=(SELECT id FROM workspaces ORDER BY created_at LIMIT 1)
   AND role IN ('owner','admin');
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TEXT NOT NULL,
+  used_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens(user_id,expires_at);
+CREATE TABLE IF NOT EXISTS password_reset_requests (
+  id TEXT PRIMARY KEY,
+  email_hash TEXT NOT NULL,
+  ip_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_password_reset_requests_email ON password_reset_requests(email_hash,created_at);
+CREATE INDEX IF NOT EXISTS idx_password_reset_requests_ip ON password_reset_requests(ip_hash,created_at);
 `;
 let schemaPromise;
 async function ensureSchema(env) {
@@ -220,6 +238,103 @@ async function auth(request,env,path) {
       }
       throw error;
     }
+  }
+  if(path==="/api/auth/password-reset/request"&&request.method==="POST"){
+    if(!env.DB)return json({error:"Database binding DB is not configured."},503);
+    await ensureSchema(env);
+    if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
+    if(!env.RESEND_API_KEY||!env.RESOLVEAI_FROM_EMAIL)return json({error:"Password reset email is not configured yet. Please contact the site administrator."},503);
+    const b=await body(request),email=validEmail(b?.email)?b.email.trim().toLowerCase():null;
+    if(!email)return json({error:"Enter a valid email address."},400);
+
+    // Use a configured canonical URL so an attacker-controlled Host header
+    // can never redirect a password-reset token to another website.
+    let publicOrigin;
+    try {
+      const publicUrl=new URL(String(env.RESOLVEAI_PUBLIC_URL||""));
+      if(publicUrl.protocol!=="https:"||publicUrl.username||publicUrl.password||publicUrl.search||publicUrl.hash)throw new Error("Invalid public URL");
+      publicOrigin=publicUrl.origin;
+    } catch {
+      return json({error:"Password reset is not configured correctly. Please contact the site administrator."},503);
+    }
+
+    const now=Date.now(),nowIso=new Date(now).toISOString(),windowStart=new Date(now-15*60*1000).toISOString();
+    const emailHash=await digest(email);
+    const ipHash=await digest(request.headers.get("CF-Connecting-IP")||"unknown");
+    await env.DB.prepare("DELETE FROM password_reset_requests WHERE created_at<?").bind(new Date(now-24*60*60*1000).toISOString()).run();
+    const [emailAttempts,ipAttempts]=await Promise.all([
+      env.DB.prepare("SELECT COUNT(*) AS total FROM password_reset_requests WHERE email_hash=? AND created_at>?").bind(emailHash,windowStart).first(),
+      env.DB.prepare("SELECT COUNT(*) AS total FROM password_reset_requests WHERE ip_hash=? AND created_at>?").bind(ipHash,windowStart).first()
+    ]);
+    const genericMessage="If an account exists for that email, a password reset link will be sent shortly. Check your inbox and spam folder.";
+    if(Number(emailAttempts?.total||0)>=3||Number(ipAttempts?.total||0)>=10)return json({ok:true,message:genericMessage});
+    await env.DB.prepare("INSERT INTO password_reset_requests (id,email_hash,ip_hash,created_at) VALUES (?,?,?,?)")
+      .bind(crypto.randomUUID(),emailHash,ipHash,nowIso).run();
+
+    const user=await env.DB.prepare("SELECT id,email FROM users WHERE email=? COLLATE NOCASE").bind(email).first();
+    if(!user)return json({ok:true,message:genericMessage});
+
+    await env.DB.prepare("DELETE FROM password_reset_tokens WHERE user_id=?").bind(user.id).run();
+    const resetToken=randomToken(),tokenHash=await digest(resetToken);
+    const expiresAt=new Date(now+30*60*1000).toISOString();
+    await env.DB.prepare("INSERT INTO password_reset_tokens (id,user_id,token_hash,expires_at) VALUES (?,?,?,?)")
+      .bind(crypto.randomUUID(),user.id,tokenHash,expiresAt).run();
+    const resetUrl=new URL("/login/?reset_token="+encodeURIComponent(resetToken),publicOrigin).toString();
+    const html="<div style='font-family:Arial,sans-serif;line-height:1.6;color:#172033'><h2>Reset your ResolveAI password</h2><p>We received a request to create a new password for your ResolveAI account.</p><p><a href='"+resetUrl+"' style='display:inline-block;padding:12px 18px;background:#172033;color:#fff;text-decoration:none;border-radius:8px'>Create a new password</a></p><p>This link expires in 30 minutes and can be used once. If you did not request this change, you can ignore this email.</p></div>";
+    try {
+      const delivery=await fetch("https://api.resend.com/emails",{
+        method:"POST",
+        headers:{
+          "Authorization":"Bearer "+env.RESEND_API_KEY,
+          "Content-Type":"application/json",
+          "User-Agent":"ResolveAI/1.0",
+          "Idempotency-Key":"resolveai-password-reset-"+tokenHash
+        },
+        body:JSON.stringify({
+          from:env.RESOLVEAI_FROM_EMAIL,
+          to:[user.email],
+          subject:"Reset your ResolveAI password",
+          html,
+          text:"Reset your ResolveAI password using this link: "+resetUrl+"\n\nThe link expires in 30 minutes and can be used once. If you did not request this change, ignore this email."
+        })
+      });
+      if(!delivery.ok){
+        await env.DB.prepare("DELETE FROM password_reset_tokens WHERE token_hash=?").bind(tokenHash).run();
+        console.error("ResolveAI password-reset email delivery failed",{status:delivery.status});
+        return json({error:"The reset email could not be sent. Please try again later or contact the site administrator."},502);
+      }
+    } catch(error) {
+      await env.DB.prepare("DELETE FROM password_reset_tokens WHERE token_hash=?").bind(tokenHash).run();
+      console.error("ResolveAI password-reset email request failed",{name:error?.name||"Error"});
+      return json({error:"The reset email could not be sent. Please try again later or contact the site administrator."},502);
+    }
+    return json({ok:true,message:genericMessage});
+  }
+  if(path==="/api/auth/password-reset/complete"&&request.method==="POST"){
+    if(!env.DB)return json({error:"Database binding DB is not configured."},503);
+    await ensureSchema(env);
+    if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
+    const b=await body(request);
+    if(typeof b?.token!=="string"||b.token.length<32||b.token.length>128||!validPassword(b.password))
+      return json({error:"This reset link is invalid or expired, or the new password does not meet the requirements."},400);
+    const tokenHash=await digest(b.token),now=new Date().toISOString();
+    const record=await env.DB.prepare("SELECT id,user_id FROM password_reset_tokens WHERE token_hash=? AND used_at IS NULL AND expires_at>?")
+      .bind(tokenHash,now).first();
+    if(!record)return json({error:"This reset link is invalid or expired. Request a new password reset link."},400);
+    const nextPassword=await passwordHash(b.password);
+    const results=await env.DB.batch([
+      env.DB.prepare("UPDATE password_reset_tokens SET used_at=? WHERE id=? AND used_at IS NULL AND expires_at>?")
+        .bind(now,record.id,now),
+      env.DB.prepare("UPDATE users SET password_hash=?,password_salt=?,updated_at=? WHERE id=? AND EXISTS (SELECT 1 FROM password_reset_tokens WHERE id=? AND used_at=?)")
+        .bind(nextPassword.hash,nextPassword.salt,now,record.user_id,record.id,now),
+      env.DB.prepare("DELETE FROM sessions WHERE user_id=? AND EXISTS (SELECT 1 FROM password_reset_tokens WHERE id=? AND used_at=?)")
+        .bind(record.user_id,record.id,now),
+      env.DB.prepare("DELETE FROM password_reset_tokens WHERE user_id=? AND id<>?")
+        .bind(record.user_id,record.id)
+    ]);
+    if(!results[0]?.meta?.changes||!results[1]?.meta?.changes)
+      return json({error:"This reset link was already used or has expired. Request a new password reset link."},400);
+    return json({ok:true,message:"Your password has been updated. Please sign in with your new password."});
   }
   if(path==="/api/auth/logout"&&request.method==="POST"){
     if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
