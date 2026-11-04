@@ -14,9 +14,14 @@ with open(sys.argv[1], encoding='utf-8') as handle:
 if data.get('service') != 'ResolveAI' or data.get('status') != 'ok' or data.get('database') != 'reachable':
     print('FAIL: preview D1 health response is unexpected:', data)
     sys.exit(1)
-print('PASS: Cloudflare preview Worker is online and D1 responds to read-only SELECT 1.')
+print('PASS: D1 read-only SELECT 1 succeeded.')
 PY
-    exit $?
+    LOGIN_CODE="$(curl --silent --show-error --max-time 15 -o "$FILE" -w '%{http_code}' "$BASE_URL/login/" 2>/dev/null || true)"
+    if [[ "$LOGIN_CODE" == "200" ]]; then
+      echo 'PASS: ResolveAI sign-in page returned HTTP 200.'
+      exit 0
+    fi
+    echo "Sign-in page health attempt returned HTTP ${LOGIN_CODE:-no response}; retrying..."
   fi
   echo "Health check attempt ${attempt}/36 returned HTTP ${CODE:-no response}; retrying..."
   sleep 5
