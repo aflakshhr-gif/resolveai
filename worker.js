@@ -186,8 +186,8 @@ async function auth(request,env,path) {
     return json({ok:true},200,{"set-cookie":cookie("",0)});
   }
   if(!env.DB)return json({error:"Database binding DB is not configured."},503);
-  await ensureSchema(env);
   if(path==="/api/auth/setup"&&request.method==="POST"){
+    await ensureSchema(env);
     if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
     if(!env.RESOLVEAI_SETUP_TOKEN)return json({error:"Set the RESOLVEAI_SETUP_TOKEN secret before initial setup."},503);
     const b=await body(request);
@@ -204,6 +204,7 @@ async function auth(request,env,path) {
     return json({ok:true},201,{"set-cookie":cookie(await newSession(env,id))});
   }
   if(path==="/api/auth/register"&&request.method==="POST"){
+    await ensureSchema(env);
     if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
     const b=await body(request);
     if(!b||!validEmail(b.email)||!validPassword(b.password))return json({error:"Enter a valid email and a password with at least 12 characters."},400);
@@ -252,6 +253,7 @@ async function auth(request,env,path) {
     }
   }
   if(path==="/api/auth/accept-invite"&&request.method==="POST"){
+    await ensureSchema(env);
     if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
     const b=await body(request);
     if(!b||typeof b.invite_token!=="string"||!validEmail(b.email)||!validPassword(b.password))return json({error:"Invitation, valid email and password (12+ characters) are required."},400);
