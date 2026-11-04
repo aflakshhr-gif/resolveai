@@ -36,7 +36,12 @@ export default function LoginPage() {
         if (!response.ok) throw new Error(data.error || "Private workspace is not ready.");
         setMode(token ? "invite" : data.setup_required ? "setup" : "login");
       })
-      .catch(reason => { setError(reason instanceof Error ? reason.message : "Cannot connect to ResolveAI."); setMode("unavailable"); });
+      .catch(reason => {
+        setError(reason instanceof Error ? reason.message : "Cannot reach the workspace status service.");
+        // Keep the existing-account sign-in form available even when the
+        // optional bootstrap/status probe times out.
+        setMode(token ? "unavailable" : "login");
+      });
   }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
