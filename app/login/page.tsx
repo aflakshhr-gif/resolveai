@@ -38,6 +38,8 @@ export default function LoginPage() {
     if (passwordResetToken) {
       setResetToken(passwordResetToken);
       setMode("reset");
+      // Keep the one-time credential out of the address bar after hydration.
+      window.history.replaceState({}, "", "/login/");
       return;
     }
     fetch("/api/auth/status", { cache: "no-store", signal: AbortSignal.timeout(12000) })
