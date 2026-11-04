@@ -92,7 +92,7 @@ function getCookie(request) {
 function randomToken() { const b = crypto.getRandomValues(new Uint8Array(32)); let s = ""; for (const n of b) s += String.fromCharCode(n); return btoa(s).replace(/=/g,"").replace(/\+/g,"-").replace(/\//g,"_"); }
 async function digest(value) { const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)); let s=""; for(const n of new Uint8Array(b)) s+=String.fromCharCode(n); return btoa(s).replace(/=/g,"").replace(/\+/g,"-").replace(/\//g,"_"); }
 function equal(a,b) { if(typeof a!=="string"||typeof b!=="string"||a.length!==b.length)return false; let n=0; for(let i=0;i<a.length;i++)n|=a.charCodeAt(i)^b.charCodeAt(i); return n===0; }
-function decode64url(s) { const b=atob(s.replace(/-/g,"+").replace(/_/g,"/")+"=".repeat((4-s.length%4)%4)); return Uint8Array.from(b,c=>c.charCodeAt(0)); }
+function decode64url(s) { const normalized=String(s).replace(/-/g,"+").replace(/_/g,"/").replace(/=+$/,""); const b=atob(normalized+"=".repeat((4-normalized.length%4)%4)); return Uint8Array.from(b,c=>c.charCodeAt(0)); }
 async function passwordHash(password, saltText) {
   const salt = saltText ? decode64url(saltText) : crypto.getRandomValues(new Uint8Array(16));
   // node:crypto PBKDF2 preserves the existing SHA-256/310,000 format while
@@ -205,20 +205,29 @@ async function auth(request,env,path) {
     return json({ok:true,requires_membership:true},201,{"set-cookie":cookie(await newSession(env,id))});
   }
   if(path==="/api/auth/login"&&request.method==="POST"){
-    if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
-    const b=await body(request);
-    if(!b||!validEmail(b.email)||typeof b.password!=="string")return json({error:"Enter your email and password."},400);
-    const ip=request.headers.get("CF-Connecting-IP")||"unknown",key="login:"+ip+":"+b.email.trim().toLowerCase(),now=Date.now();
-    const attempts=(requestWindows.get(key)||[]).filter(t=>now-t<60000);
-    if(attempts.length>=10)return json({error:"Too many sign-in attempts. Wait a minute and try again."},429);
-    attempts.push(now);requestWindows.set(key,attempts);
-    const u=await env.DB.prepare("SELECT id,password_hash,password_salt FROM users WHERE email=? COLLATE NOCASE").bind(b.email.trim()).first();
-    if(!u)return json({error:"Email or password is incorrect."},401);
-    const pw=await passwordHash(b.password,u.password_salt);
-    if(!equal(pw.hash,u.password_hash))return json({error:"Email or password is incorrect."},401);
-    const sessionToken=await newSession(env,u.id);
-    if(request.headers.get("X-ResolveAI-Client")==="mobile")return json({ok:true,access_token:sessionToken,expires_in:SESSION_SECONDS});
-    return json({ok:true},200,{"set-cookie":cookie(sessionToken)});
+    let loginStage="request_validation";
+    try {
+      if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
+      const b=await body(request);
+      if(!b||!validEmail(b.email)||typeof b.password!=="string")return json({error:"Enter your email and password."},400);
+      const ip=request.headers.get("CF-Connecting-IP")||"unknown",key="login:"+ip+":"+b.email.trim().toLowerCase(),now=Date.now();
+      const attempts=(requestWindows.get(key)||[]).filter(t=>now-t<60000);
+      if(attempts.length>=10)return json({error:"Too many sign-in attempts. Wait a minute and try again."},429);
+      attempts.push(now);requestWindows.set(key,attempts);
+      loginStage="account_lookup";
+      const u=await env.DB.prepare("SELECT id,password_hash,password_salt FROM users WHERE email=? COLLATE NOCASE").bind(b.email.trim()).first();
+      if(!u)return json({error:"Email or password is incorrect."},401);
+      loginStage="password_verification";
+      const pw=await passwordHash(b.password,u.password_salt);
+      if(!equal(pw.hash,u.password_hash))return json({error:"Email or password is incorrect."},401);
+      loginStage="session_creation";
+      const sessionToken=await newSession(env,u.id);
+      if(request.headers.get("X-ResolveAI-Client")==="mobile")return json({ok:true,access_token:sessionToken,expires_in:SESSION_SECONDS});
+      return json({ok:true},200,{"set-cookie":cookie(sessionToken)});
+    } catch(error) {
+      console.error("ResolveAI login stage failed", {stage:loginStage,error});
+      return json({error:"The authentication service encountered an internal error. Please share the diagnostic code with the site maintainer.",code:"AUTH_"+loginStage.toUpperCase()+"_ERROR"},500);
+    }
   }
   if(path==="/api/auth/accept-invite"&&request.method==="POST"){
     if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
