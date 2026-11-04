@@ -243,7 +243,8 @@ async function auth(request,env,path) {
     if(!env.DB)return json({error:"Database binding DB is not configured."},503);
     await ensureSchema(env);
     if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
-    if((!env.EMAIL?.send&&!env.RESEND_API_KEY)||!env.RESOLVEAI_FROM_EMAIL)return json({error:"Password reset email is not configured yet. Please contact the site administrator."},503);
+    const googleAppsScriptConfigured=Boolean(env.GOOGLE_APPS_SCRIPT_URL&&env.GOOGLE_APPS_SCRIPT_TOKEN);
+    if(!googleAppsScriptConfigured&&((!env.EMAIL?.send&&!env.RESEND_API_KEY)||!env.RESOLVEAI_FROM_EMAIL))return json({error:"Password reset email is not configured yet. Please contact the site administrator."},503);
     const b=await body(request),email=validEmail(b?.email)?b.email.trim().toLowerCase():null;
     if(!email)return json({error:"Enter a valid email address."},400);
 
@@ -282,29 +283,48 @@ async function auth(request,env,path) {
     const resetUrl=new URL("/login/?reset_token="+encodeURIComponent(resetToken),publicOrigin).toString();
     const html="<div style='font-family:Arial,sans-serif;line-height:1.6;color:#172033'><h2>Reset your ResolveAI password</h2><p>We received a request to create a new password for your ResolveAI account.</p><p><a href='"+resetUrl+"' style='display:inline-block;padding:12px 18px;background:#172033;color:#fff;text-decoration:none;border-radius:8px'>Create a new password</a></p><p>This link expires in 30 minutes and can be used once. If you did not request this change, you can ignore this email.</p></div>";
     try {
-      const message={
-        from:env.RESOLVEAI_FROM_EMAIL,
-        to:user.email,
-        subject:"Reset your ResolveAI password",
-        html,
-        text:"Reset your ResolveAI password using this link: "+resetUrl+"\\n\\nThe link expires in 30 minutes and can be used once. If you did not request this change, ignore this email."
-      };
-      if(env.EMAIL?.send){
-        // Prefer Cloudflare Email Service when the Preview binding is enabled.
-        await env.EMAIL.send(message);
-      }else{
-        // Resend remains available as an optional provider fallback.
-        const delivery=await fetch("https://api.resend.com/emails",{
+      if(googleAppsScriptConfigured){
+        // Google Apps Script sends from the Gmail account that owns the script.
+        // The shared token is held only in Cloudflare Secret + Apps Script Script Properties.
+        const delivery=await fetch(env.GOOGLE_APPS_SCRIPT_URL,{
           method:"POST",
-          headers:{
-            "Authorization":"Bearer "+env.RESEND_API_KEY,
-            "Content-Type":"application/json",
-            "User-Agent":"ResolveAI/1.0",
-            "Idempotency-Key":"resolveai-password-reset-"+tokenHash
-          },
-          body:JSON.stringify({...message,to:[user.email]})
+          headers:{"Content-Type":"application/json"},
+          redirect:"follow",
+          body:JSON.stringify({
+            secret:env.GOOGLE_APPS_SCRIPT_TOKEN,
+            to:user.email,
+            reset_url:resetUrl
+          })
         });
-        if(!delivery.ok)throw new Error("Resend email delivery failed with HTTP "+delivery.status);
+        const responseText=await delivery.text();
+        let responseData=null;
+        try{responseData=JSON.parse(responseText);}catch{}
+        if(!delivery.ok||!responseData?.ok)throw new Error("Google Apps Script email delivery failed");
+      }else{
+        const message={
+          from:env.RESOLVEAI_FROM_EMAIL,
+          to:user.email,
+          subject:"Reset your ResolveAI password",
+          html,
+          text:"Reset your ResolveAI password using this link: "+resetUrl+"\\n\\nThe link expires in 30 minutes and can be used once. If you did not request this change, ignore this email."
+        };
+        if(env.EMAIL?.send){
+          // Cloudflare Email Service remains available as a secondary provider.
+          await env.EMAIL.send(message);
+        }else{
+          // Resend remains available as an optional provider fallback.
+          const delivery=await fetch("https://api.resend.com/emails",{
+            method:"POST",
+            headers:{
+              "Authorization":"Bearer "+env.RESEND_API_KEY,
+              "Content-Type":"application/json",
+              "User-Agent":"ResolveAI/1.0",
+              "Idempotency-Key":"resolveai-password-reset-"+tokenHash
+            },
+            body:JSON.stringify({...message,to:[user.email]})
+          });
+          if(!delivery.ok)throw new Error("Resend email delivery failed with HTTP "+delivery.status);
+        }
       }
     } catch(error) {
       await env.DB.prepare("DELETE FROM password_reset_tokens WHERE token_hash=?").bind(tokenHash).run();
