@@ -385,7 +385,7 @@ export default {
           const result=await env.DB.batch([
             env.DB.prepare("UPDATE membership_requests SET status='approved',reviewed_by_user_id=?,reviewed_at=?,review_note=?,updated_at=? WHERE user_id=? AND status IN ('pending','rejected') AND EXISTS (SELECT 1 FROM workspace_members WHERE user_id=?)")
               .bind(session.user_id,reviewedAt,typeof b.note==="string"?b.note.trim().slice(0,500):null,reviewedAt,userId,userId),
-            env.DB.prepare("UPDATE workspace_members SET workspace_id=?,role='agent' WHERE user_id=? AND EXISTS (SELECT 1 FROM membership_requests WHERE user_id=? AND status='approved' AND reviewed_by_user_id=? AND reviewed_at=?)")
+            env.DB.prepare("UPDATE workspace_members SET workspace_id=?,role=CASE WHEN role IN ('owner','admin') THEN role ELSE 'agent' END WHERE user_id=? AND EXISTS (SELECT 1 FROM membership_requests WHERE user_id=? AND status='approved' AND reviewed_by_user_id=? AND reviewed_at=?)")
               .bind(unitWorkspaceId,userId,userId,session.user_id,reviewedAt)
           ]);
           if(!result[0]?.meta?.changes || !result[1]?.meta?.changes)return json({error:"Could not move the member into the private unit workspace. The request has not been activated; refresh and retry."},409);
