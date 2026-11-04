@@ -1,3 +1,4 @@
+import { pbkdf2 } from "node:crypto";
 const requestWindows = new Map();
 const COOKIE = "resolveai_session";
 const SESSION_SECONDS = 604800;
@@ -89,8 +90,14 @@ function equal(a,b) { if(typeof a!=="string"||typeof b!=="string"||a.length!==b.
 function decode64url(s) { const b=atob(s.replace(/-/g,"+").replace(/_/g,"/")+"=".repeat((4-s.length%4)%4)); return Uint8Array.from(b,c=>c.charCodeAt(0)); }
 async function passwordHash(password, saltText) {
   const salt = saltText ? decode64url(saltText) : crypto.getRandomValues(new Uint8Array(16));
-  const key = await crypto.subtle.importKey("raw",new TextEncoder().encode(password),"PBKDF2",false,["deriveBits"]);
-  const bits = await crypto.subtle.deriveBits({name:"PBKDF2",hash:"SHA-256",salt,iterations:310000},key,256);
+  // node:crypto PBKDF2 preserves the existing SHA-256/310,000 format while
+  // avoiding the WebCrypto-specific 100,000-iteration ceiling in Workers.
+  const bits = await new Promise((resolve, reject) => {
+    pbkdf2(password, salt, 310000, 32, "sha256", (error, derivedKey) => {
+      if (error) reject(error);
+      else resolve(derivedKey);
+    });
+  });
   let s=""; for(const n of new Uint8Array(bits))s+=String.fromCharCode(n);
   return {hash:btoa(s).replace(/=/g,"").replace(/\+/g,"-").replace(/\//g,"_"),salt:(()=>{let v="";for(const n of salt)v+=String.fromCharCode(n);return btoa(v).replace(/=/g,"").replace(/\+/g,"-").replace(/\//g,"_")})()};
 }
@@ -304,7 +311,15 @@ export default {
   async fetch(request,env) {
     const url=new URL(request.url),path=url.pathname.replace(/\/$/,"")||"/";
     if(path==="/api/health"&&request.method==="GET")return json({service:"ResolveAI",status:"ok",mode:"private-team",database_configured:Boolean(env.DB)});
-    if(path.startsWith("/api/auth/")){const result=await auth(request,env,path);if(result)return result;}
+    if(path.startsWith("/api/auth/")){
+      try {
+        const result=await auth(request,env,path);
+        if(result)return result;
+      } catch(error) {
+        console.error("ResolveAI authentication request failed", error);
+        return json({error:"The authentication service encountered an internal error. Please try again shortly.",code:"AUTH_RUNTIME_ERROR"},500);
+      }
+    }
     if(path.startsWith("/api/")){
       if(!env.DB)return json({error:"Database binding DB is not configured."},503);
       const session=await sessionFor(request,env);
