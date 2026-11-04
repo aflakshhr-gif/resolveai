@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 
 const worker = readFileSync(new URL("../worker.js", import.meta.url), "utf8");
-const match = worker.match(/const SCHEMA_SQL = \`([\\s\\S]*?)\`;/);
+const match = worker.match(/const SCHEMA_SQL = \`([\s\S]*?)\`;/);
 assert.ok(match, "Worker SCHEMA_SQL template must exist");
 
 const statements = match[1].split(";").map((sql) => sql.trim()).filter(Boolean);
