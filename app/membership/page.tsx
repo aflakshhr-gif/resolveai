@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ArrowUpRight, Building2, CheckCircle2, CreditCard, Home, LifeBuoy, LockKeyhole, ShieldCheck } from "lucide-react";
 
 type RequestData = {
   full_name?: string; phone?: string; identity_number?: string; unit_code?: string;
@@ -60,9 +61,29 @@ export default function MembershipPage() {
 
   const field=(label:string,key:keyof RequestData,placeholder:string,required=true)=><label className="membership-field">{label}<input value={String(form[key]||"")} onChange={e=>change(key,e.target.value)} placeholder={placeholder} required={required} maxLength={key==="unit_details"?500:160}/></label>;
 
-  return <main className="auth-shell"><section className="auth-card" style={{maxWidth:650,width:"100%"}}>
-    <div className="auth-brand"><span className="auth-mark">✦</span><span>resolve<strong>ai</strong></span></div>
-    <div className="auth-eyebrow">UNIT MEMBERSHIP</div><h1>Complete your membership details</h1>
+  return <main className="auth-shell rx-auth-shell rx-membership-shell">
+    <div className="rx-auth-glow rx-auth-glow-one" aria-hidden="true" />
+    <div className="rx-auth-layout rx-auth-layout-wide">
+      <aside className="rx-auth-story rx-membership-story">
+        <a href="/website/" className="rx-auth-brand">
+          <span className="rx-auth-brand-mark"><LifeBuoy size={20}/></span>
+          <span>Resolve<span>AI</span></span>
+        </a>
+        <div className="rx-auth-story-copy">
+          <div className="rx-auth-kicker"><span/> MEMBERSHIP REVIEW</div>
+          <h2>Connect your account to <em>your unit.</em></h2>
+          <p>Complete the details below so the block administrator can review your request and activate the appropriate private workspace access.</p>
+          <div className="rx-auth-points">
+            <div><span><Building2 size={16}/></span><div><b>Unit verification</b><small>Your unit code and building details are reviewed.</small></div></div>
+            <div><span><CreditCard size={16}/></span><div><b>Payment reference</b><small>Provide a receipt or tracking reference only.</small></div></div>
+            <div><span><ShieldCheck size={16}/></span><div><b>Administrator approval</b><small>Private access follows a human review.</small></div></div>
+          </div>
+        </div>
+        <div className="rx-auth-story-foot"><LockKeyhole size={14}/> Your details are limited to authorized administrators</div>
+      </aside>
+      <section className="auth-card rx-auth-card rx-membership-card">
+    <div className="auth-card-brand"><span className="auth-card-mark"><LifeBuoy size={18}/></span><span>Resolve<span>AI</span></span></div>
+    <div className="rx-auth-form-kicker"><span/> UNIT MEMBERSHIP</div><h1>Complete your membership details</h1>
     <p className="auth-description">Your account is active with limited access. Submit your identity and unit information for review by the block administrator. Full private access is enabled only after approval.</p>
     {status==="approved"?<div className="auth-footnote">Your membership is approved. <button onClick={()=>router.replace("/")}>Continue to workspace</button></div>:status==="pending"?<div className="auth-error" style={{background:"#eff6ff",color:"#1d4ed8"}}>Your request has been submitted and is waiting for administrator review. You can update and resubmit the form below if needed.</div>:null}
     {error&&<div className="auth-error">{error}</div>}
@@ -83,5 +104,8 @@ export default function MembershipPage() {
       <button className="auth-submit" type="submit" disabled={busy||status==="approved"}>{busy?"Submitting…":status==="pending"?"Update and resubmit request":"Submit for administrator approval"}</button>
     </form>
     <div className="auth-footnote"><button onClick={async()=>{await fetch("/api/auth/logout",{method:"POST"});router.replace("/login/");}}>Sign out</button></div>
-  </section></main>;
+    <a href="/website/" className="rx-auth-backlink">Back to ResolveAI <ArrowUpRight size={13}/></a>
+      </section>
+    </div>
+  </main>;
 }
