@@ -55,12 +55,24 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user_expiry ON sessions(user_id,expires_
 CREATE INDEX IF NOT EXISTS idx_conversations_workspace_updated ON conversations(workspace_id,updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_created ON messages(conversation_id,created_at);
 CREATE INDEX IF NOT EXISTS idx_team_invites_workspace_email ON team_invites(workspace_id,email);
+CREATE TABLE IF NOT EXISTS membership_requests (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  full_name TEXT, phone TEXT, identity_number TEXT, unit_code TEXT, unit_details TEXT,
+  resident_type TEXT, payment_method TEXT, payment_reference TEXT,
+  status TEXT NOT NULL DEFAULT 'not_submitted' CHECK(status IN ('not_submitted','pending','approved','rejected')),
+  reviewed_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  reviewed_at TEXT, review_note TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_membership_requests_status ON membership_requests(status,updated_at);
 `;
 let schemaPromise;
 async function ensureSchema(env) {
   if (!env.DB) throw new Error("Database binding DB is not configured.");
   if (!schemaPromise) {
-    const statements = SCHEMA_SQL.split(';').map(statement => statement.trim()).filter(Boolean);\n    schemaPromise = env.DB.batch(statements.map(statement => env.DB.prepare(statement))).catch(error => { schemaPromise = null; throw error; });
+    const statements = SCHEMA_SQL.split(';').map(statement => statement.trim()).filter(Boolean);
+    schemaPromise = env.DB.batch(statements.map(statement => env.DB.prepare(statement))).catch(error => { schemaPromise = null; throw error; });
   }
   await schemaPromise;
 }
@@ -92,9 +104,11 @@ async function sessionFor(request,env) {
   const authorization=request.headers.get("Authorization")||"";
   const bearer=authorization.startsWith("Bearer ")?authorization.slice(7).trim():null;
   const token=bearer||getCookie(request); if(!token||token.length>200)return null;
-  return await env.DB.prepare(`SELECT u.id AS user_id,u.email,w.id AS workspace_id,w.name AS workspace_name,wm.role
+  return await env.DB.prepare(`SELECT u.id AS user_id,u.email,w.id AS workspace_id,w.name AS workspace_name,wm.role,
+    COALESCE(mr.status,'approved') AS membership_status
     FROM sessions s JOIN users u ON u.id=s.user_id JOIN workspace_members wm ON wm.user_id=u.id
-    JOIN workspaces w ON w.id=wm.workspace_id WHERE s.token_hash=? AND s.expires_at>? ORDER BY wm.created_at LIMIT 1`)
+    JOIN workspaces w ON w.id=wm.workspace_id LEFT JOIN membership_requests mr ON mr.user_id=u.id
+    WHERE s.token_hash=? AND s.expires_at>? ORDER BY wm.created_at LIMIT 1`)
     .bind(await digest(token),new Date().toISOString()).first();
 }
 async function newSession(env,userId) {
