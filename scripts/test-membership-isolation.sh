@@ -4,7 +4,7 @@ set -euo pipefail
 db="$(mktemp)"
 trap 'rm -f "$db"' EXIT
 
-cat migrations/0001_initial.sql migrations/0002_team_invites.sql migrations/0003_unit_membership_workspaces.sql | sqlite3 "$db"
+cat migrations/0001_initial.sql migrations/0002_team_invites.sql migrations/0003_unit_membership_workspaces.sql migrations/0004_block_admin_workspaces.sql | sqlite3 "$db"
 
 sqlite3 "$db" <<'SQL'
 PRAGMA foreign_keys = ON;
@@ -13,6 +13,7 @@ INSERT INTO users (id,email,password_hash,password_salt) VALUES
   ('unit-a1','a1@example.invalid','hash','salt'),
   ('unit-a2','a2@example.invalid','hash','salt'),
   ('unit-b1','b1@example.invalid','hash','salt');
+INSERT INTO block_admins (user_id) VALUES ('block-admin');
 
 INSERT INTO workspaces (id,name,owner_user_id) VALUES
   ('main','Main workspace','block-admin'),
@@ -24,6 +25,9 @@ INSERT INTO workspace_members (workspace_id,user_id,role) VALUES
   ('main','unit-a1','viewer'),
   ('main','unit-a2','viewer'),
   ('main','unit-b1','viewer');
+INSERT INTO workspace_members (workspace_id,user_id,role) VALUES
+  ('workspace-a','block-admin','admin'),
+  ('workspace-b','block-admin','admin');
 
 INSERT INTO membership_requests (user_id,unit_code,status) VALUES
   ('unit-a1','a101','pending'),
@@ -52,11 +56,13 @@ unit_a2_visible="$(sqlite3 "$db" "SELECT COUNT(*) FROM conversations c JOIN work
 unit_b_visible="$(sqlite3 "$db" "SELECT COUNT(*) FROM conversations c JOIN workspace_members wm ON wm.workspace_id=c.workspace_id WHERE wm.user_id='unit-b1';")"
 cross_unit_visible="$(sqlite3 "$db" "SELECT COUNT(*) FROM conversations c JOIN workspace_members wm ON wm.workspace_id=c.workspace_id WHERE wm.user_id='unit-a1' AND c.id='ticket-b';")"
 same_unit_workspace_count="$(sqlite3 "$db" "SELECT COUNT(DISTINCT workspace_id) FROM workspace_members WHERE user_id IN ('unit-a1','unit-a2');")"
+admin_unit_count="$(sqlite3 "$db" "SELECT COUNT(*) FROM workspace_members wm JOIN unit_workspaces uw ON uw.workspace_id=wm.workspace_id WHERE wm.user_id='block-admin' AND wm.role='admin';")"
 
 test "$unit_a_visible" = "1"
 test "$unit_a2_visible" = "1"
 test "$unit_b_visible" = "1"
 test "$cross_unit_visible" = "0"
 test "$same_unit_workspace_count" = "1"
+test "$admin_unit_count" = "2"
 
 echo "Unit membership migration and cross-unit isolation checks passed."
