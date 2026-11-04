@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Activity, ArrowUpRight, CheckCircle2, LifeBuoy, LockKeyhole, ShieldCheck, Sparkles } from "lucide-react";
 
 type Mode = "loading" | "login" | "register" | "setup" | "invite" | "unavailable" | "forgot" | "reset" | "verify_pending" | "verify_email";
 
@@ -174,10 +175,34 @@ export default function LoginPage() {
     : mode === "verify_email" ? "Confirm that you own this email address. The link can be used once and expires after 24 hours."
     : "Sign in to your ResolveAI account.";
 
-  return <main className="auth-shell">
-    <section className="auth-card">
-      <div className="auth-brand"><span className="auth-mark">✦</span><span>resolve<strong>ai</strong></span></div>
-      <div className="auth-eyebrow">PRIVATE TEAM WORKSPACE</div>
+  return <main className="auth-shell rx-auth-shell">
+    <div className="rx-auth-glow rx-auth-glow-one" aria-hidden="true" />
+    <div className="rx-auth-glow rx-auth-glow-two" aria-hidden="true" />
+    <div className="rx-auth-layout">
+      <aside className="rx-auth-story">
+        <a href="/website/" className="rx-auth-brand">
+          <span className="rx-auth-brand-mark"><LifeBuoy size={20}/></span>
+          <span>Resolve<span>AI</span></span>
+        </a>
+        <div className="rx-auth-story-copy">
+          <div className="rx-auth-kicker"><span/> PRIVATE TEAM WORKSPACE</div>
+          <h2>Good support starts with <em>shared context.</em></h2>
+          <p>Sign in to your team workspace to review conversations, keep progress clear and leave useful notes for the people working alongside you.</p>
+          <div className="rx-auth-points">
+            <div><span><Inbox size={16}/></span><div><b>One shared workspace</b><small>Keep conversations and context together.</small></div></div>
+            <div><span><Activity size={16}/></span><div><b>Clear next steps</b><small>Keep the status and handoff visible.</small></div></div>
+            <div><span><ShieldCheck size={16}/></span><div><b>Access with approval</b><small>Private team areas are protected.</small></div></div>
+          </div>
+        </div>
+        <div className="rx-auth-story-foot"><LockKeyhole size={14}/> Private access · Reviewed membership</div>
+        <div className="rx-auth-decoration" aria-hidden="true"><div/><div/><div/></div>
+      </aside>
+      <section className="auth-card rx-auth-card">
+      <div className="auth-card-brand">
+        <span className="auth-card-mark"><LifeBuoy size={18}/></span>
+        <span>Resolve<span>AI</span></span>
+      </div>
+      <div className="rx-auth-form-kicker"><span/> SECURE ACCOUNT ACCESS</div>
       <h1>{title}</h1>
       <p className="auth-description">{description}</p>
       {mode === "loading" ? <div className="auth-loading">Checking secure workspace…</div> : mode === "unavailable" ? <div className="auth-error">{error}</div> : <form onSubmit={submit} className="auth-form">
@@ -199,7 +224,9 @@ export default function LoginPage() {
       </> : mode === "register" ? <button type="button" className="outline-btn" onClick={() => { setMode("login"); setError(""); setNotice(""); }}>Already have an account? Sign in</button>
       : mode === "forgot" || mode === "reset" || mode === "verify_pending" || mode === "verify_email" ? <button type="button" className="outline-btn" onClick={() => { setMode("login"); setError(""); setNotice(""); setPassword(""); setConfirmPassword(""); setResetToken(""); setVerificationToken(""); window.history.replaceState({}, "", "/login/"); }}>Back to sign in</button>
       : null}
-      <div className="auth-footnote"><span className="auth-lock">●</span> Public entry · Private access after approval</div>
+      <div className="auth-footnote rx-auth-footnote"><span className="auth-lock">●</span> Public entry · Private access after approval</div>
+      <a href="/website/" className="rx-auth-backlink">Explore ResolveAI <ArrowUpRight size={13}/></a>
     </section>
+    </div>
   </main>;
 }
