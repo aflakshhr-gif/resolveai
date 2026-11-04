@@ -1,4 +1,5 @@
 import { pbkdf2 } from "node:crypto";
+import { Buffer } from "node:buffer";
 const requestWindows = new Map();
 const COOKIE = "resolveai_session";
 const SESSION_SECONDS = 604800;
@@ -240,8 +241,11 @@ async function auth(request,env,path) {
       if(request.headers.get("X-ResolveAI-Client")==="mobile")return json({ok:true,access_token:sessionToken,expires_in:SESSION_SECONDS});
       return json({ok:true},200,{"set-cookie":cookie(sessionToken)});
     } catch(error) {
-      console.error("ResolveAI login stage failed", {stage:loginStage,error});
-      return json({error:"The authentication service encountered an internal error. Please share the diagnostic code with the site maintainer.",code:"AUTH_"+loginStage.toUpperCase()+"_ERROR"},500);
+      const innerCode = typeof error?.code === "string" && /^PASSWORD_(SALT_DECODE|PBKDF2|HASH_ENCODING)_FAILED$/.test(error.code)
+        ? "AUTH_" + error.code
+        : "AUTH_" + loginStage.toUpperCase() + "_ERROR";
+      console.error("ResolveAI login stage failed", {stage:loginStage,code:innerCode,name:error?.name || "Error"});
+      return json({error:"The authentication service encountered an internal error. Please share the diagnostic code with the site maintainer.",code:innerCode},500);
     }
   }
   if(path==="/api/auth/accept-invite"&&request.method==="POST"){
