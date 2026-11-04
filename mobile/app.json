@@ -8,7 +8,7 @@
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "backgroundColor": "#f7f8fc"
+      "backgroundColor": "#f2f7f7"
     },
     "ios": {
       "supportsTablet": true,
@@ -19,7 +19,7 @@
       "package": "com.resolveai.support",
       "versionCode": 2,
       "adaptiveIcon": {
-        "backgroundColor": "#635bff"
+        "backgroundColor": "#123b47"
       }
     },
     "plugins": ["expo-secure-store"],
