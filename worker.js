@@ -129,10 +129,11 @@ const allowedOrigin = r => !r.headers.get("Origin") || r.headers.get("Origin")==
 async function body(r){try{return await r.json()}catch{return null}}
 async function sessionFor(request,env) {
   if(!env.DB)return null;
-  await ensureSchema(env);
   const authorization=request.headers.get("Authorization")||"";
   const bearer=authorization.startsWith("Bearer ")?authorization.slice(7).trim():null;
   const token=bearer||getCookie(request); if(!token||token.length>200)return null;
+  // Anonymous page requests do not need schema initialization or a D1 round trip.
+  await ensureSchema(env);
   return await env.DB.prepare(`SELECT u.id AS user_id,u.email,w.id AS workspace_id,w.name AS workspace_name,wm.role,
     COALESCE(mr.status,'approved') AS membership_status
     FROM sessions s JOIN users u ON u.id=s.user_id JOIN workspace_members wm ON wm.user_id=u.id
@@ -172,7 +173,8 @@ async function newSession(env,userId) {
 async function auth(request,env,path) {
   if(path==="/api/auth/status"&&request.method==="GET"){
     if(!env.DB)return json({error:"Database binding DB is not configured."},503);
-    await ensureSchema(env);
+    // This is a read-only bootstrap probe. The existing users table is present
+    // for any installed ResolveAI workspace; do not run DDL on the login screen.
     const n=await env.DB.prepare("SELECT COUNT(*) AS total FROM users").first();
     return json({setup_required:Number(n?.total||0)===0,setup_enabled:Boolean(env.RESOLVEAI_SETUP_TOKEN)});
   }
