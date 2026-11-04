@@ -14,13 +14,21 @@ jobs:
       - name: Validate Worker JavaScript syntax
         run: node --check worker.js
       - name: Validate smoke-test shell syntax
-        run: bash -n scripts/check-resolveai.sh scripts/check-preview-health.sh
+        run: bash -n scripts/check-resolveai.sh scripts/check-preview-health.sh scripts/test-membership-isolation.sh scripts/test-legacy-session-fallback.sh scripts/test-legacy-account-mapping.sh scripts/test-password-reset.sh
       - name: Verify runtime D1 schema batching
         run: node scripts/test-d1-schema-batch.mjs
+      - name: Verify unit workspace data isolation
+        run: bash scripts/test-membership-isolation.sh
+      - name: Verify existing admin session on legacy schema
+        run: bash scripts/test-legacy-session-fallback.sh
+      - name: Verify safe legacy account-to-unit mapping
+        run: bash scripts/test-legacy-account-mapping.sh
       - name: Validate dedicated D1 schema migrations
         run: |
-          cat migrations/0001_initial.sql migrations/0002_team_invites.sql | sqlite3 :memory:
+          cat migrations/0001_initial.sql migrations/0002_team_invites.sql migrations/0003_unit_membership_workspaces.sql migrations/0004_block_admin_workspaces.sql migrations/0005_password_reset.sql | sqlite3 :memory:
           test "$(sqlite3 :memory: 'SELECT 1')" = "1"
+      - name: Verify password reset token safety
+        run: bash scripts/test-password-reset.sh
 
   web:
     name: Web typecheck, static export and Workers dry run

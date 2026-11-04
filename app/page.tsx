@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Activity, Bell, BookOpen, Check, ChevronDown, ChevronRight, Inbox, LayoutDashboard, LifeBuoy, MessageCircle, MoreHorizontal, Search, Send, Settings, Sparkles, Users } from "lucide-react";
+import { Activity, Bell, BookOpen, Check, ChevronDown, ChevronRight, Inbox, LayoutDashboard, LifeBuoy, MessageCircle, MoreHorizontal, Search, Send, Settings, Sparkles, Users, ClipboardCheck } from "lucide-react";
 
 type AiInsight = { sentiment: string; urgency: string; intent: string; suggested_reply: string; next_step: string; mode?: string; disclaimer?: string };
 
@@ -11,7 +11,7 @@ const initialTickets: Ticket[] = [];
 
 
 
-function TeamPanel() {
+function TeamPanel({ workspaceId }: { workspaceId: string }) {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("agent");
   const [inviteUrl, setInviteUrl] = useState("");
@@ -20,7 +20,7 @@ function TeamPanel() {
   async function invite() {
     setBusy(true); setError(""); setInviteUrl("");
     try {
-      const response = await fetch("/api/auth/invites", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, role }) });
+      const response = await fetch("/api/auth/invites", { method: "POST", headers: { "content-type": "application/json", "X-ResolveAI-Workspace": workspaceId }, body: JSON.stringify({ email, role }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not create invitation.");
       setInviteUrl(data.invite_url);
@@ -38,6 +38,9 @@ export default function Home() {
   const [userEmail, setUserEmail] = useState("Loading account…");
   const [workspaceName, setWorkspaceName] = useState("Private workspace");
   const [userRole, setUserRole] = useState("Member");
+  const [workspaceId, setWorkspaceId] = useState("");
+  const [workspaces, setWorkspaces] = useState<{id:string;name:string;unit_code?:string|null;role:string}[]>([]);
+  const [isBlockAdmin, setIsBlockAdmin] = useState(false);
   const [showNewConversation, setShowNewConversation] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
@@ -51,8 +54,9 @@ export default function Home() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiInsight, setAiInsight] = useState<AiInsight | null>(null);
   const [aiError, setAiError] = useState("");
-  async function loadConversations() {
-    const response = await fetch("/api/conversations", { cache: "no-store" });
+  async function loadConversations(targetWorkspaceId: string = workspaceId) {
+    if (!targetWorkspaceId) return;
+    const response = await fetch("/api/conversations", { cache: "no-store", headers: { "X-ResolveAI-Workspace": targetWorkspaceId } });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Could not load conversations.");
     const mapped: Ticket[] = (data.conversations || []).map((item: any) => ({
@@ -72,15 +76,54 @@ export default function Home() {
   }
   useEffect(() => {
     let active = true;
-    loadConversations().catch(reason => { if (active) setApiError(reason instanceof Error ? reason.message : "Could not load conversations."); }).finally(() => { if (active) setLoadingTickets(false); });
+    async function initialize() {
+      const meResponse = await fetch("/api/auth/me", { cache: "no-store" });
+      const me = await meResponse.json();
+      if (meResponse.status === 401) { window.location.href = "/login/"; return; }
+      if (!meResponse.ok) throw new Error(me.error || "Could not load your account.");
+      if (!active) return;
+      setUserEmail(me.user?.email || "Account");
+      setWorkspaceName(me.workspace?.name || "Private workspace");
+      setUserRole(me.role || "Member");
+      const workspacesResponse = await fetch("/api/workspaces", { cache: "no-store" });
+      const workspaceData = await workspacesResponse.json();
+      if (!workspacesResponse.ok) throw new Error(workspaceData.error || "Could not load available workspaces.");
+      if (!active) return;
+      const available = Array.isArray(workspaceData.workspaces) ? workspaceData.workspaces : [];
+      setWorkspaces(available);
+      setIsBlockAdmin(Boolean(workspaceData.is_block_admin));
+      const current = available.find((item:any) => item.id === me.workspace?.id) || available[0];
+      if (!current) throw new Error("No workspace is assigned to this account.");
+      setWorkspaceId(current.id);
+      setWorkspaceName(current.name);
+      setUserRole(current.role || me.role || "Member");
+      await loadConversations(current.id);
+    }
+    initialize().catch(reason => { if (active) setApiError(reason instanceof Error ? reason.message : "Could not initialize the workspace."); }).finally(() => { if (active) setLoadingTickets(false); });
     return () => { active = false; };
   }, []);
+  async function switchWorkspace(nextId: string) {
+    const next = workspaces.find(item => item.id === nextId);
+    if (!next || nextId === workspaceId) return;
+    setWorkspaceId(nextId);
+    setWorkspaceName(next.name);
+    setUserRole(next.role || "Member");
+    setTickets([]);
+    setSelected("");
+    setDraft("");
+    setAiInsight(null);
+    setLoadingTickets(true);
+    setApiError("");
+    try { await loadConversations(nextId); }
+    catch (reason) { setApiError(reason instanceof Error ? reason.message : "Could not load this workspace."); }
+    finally { setLoadingTickets(false); }
+  }
   const active = tickets.find(t => t.id === selected) ?? tickets[0] ?? { id: "", name: "", email: "", initials: "?", subject: "No conversations yet", preview: "", time: "", status: "Open" as const, tag: "General", messages: [] };
   const filtered = useMemo(() => tickets.filter(t => (filter === "All" || t.status === filter) && (!query || [t.name, t.subject, t.preview].some(v => v.toLowerCase().includes(query.toLowerCase())))), [tickets, filter, query]);
   function flash(message: string) { setNotice(message); window.setTimeout(() => setNotice(""), 2200); }
   async function createConversation() {
     try {
-      const response = await fetch("/api/conversations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ customer_name: customerName, customer_email: customerEmail, subject: newSubject, message: firstMessage }) });
+      const response = await fetch("/api/conversations", { method: "POST", headers: { "content-type": "application/json", "X-ResolveAI-Workspace": workspaceId }, body: JSON.stringify({ customer_name: customerName, customer_email: customerEmail, subject: newSubject, message: firstMessage }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not create conversation.");
       setShowNewConversation(false); setCustomerName(""); setCustomerEmail(""); setNewSubject(""); setFirstMessage("");
@@ -90,7 +133,7 @@ export default function Home() {
   async function analyzeConversation() {
     setAiLoading(true); setAiError(""); setAiInsight(null);
     try {
-      const response = await fetch("/api/ai", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ subject: active.subject, messages: active.messages }) });
+      const response = await fetch("/api/ai", { method: "POST", headers: { "content-type": "application/json", "X-ResolveAI-Workspace": workspaceId }, body: JSON.stringify({ subject: active.subject, messages: active.messages }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "AI analysis failed.");
       setAiInsight(data as AiInsight);
@@ -100,24 +143,24 @@ export default function Home() {
   async function sendReply() {
     if (!draft.trim() || !active.id) return;
     try {
-      const response = await fetch(`/api/conversations/${encodeURIComponent(active.id)}/messages`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ body: draft.trim() }) });
+      const response = await fetch(`/api/conversations/${encodeURIComponent(active.id)}/messages`, { method: "POST", headers: { "content-type": "application/json", "X-ResolveAI-Workspace": workspaceId }, body: JSON.stringify({ body: draft.trim() }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Reply could not be saved.");
       setTickets(old => old.map(t => t.id === selected ? { ...t, status: "Pending", preview: draft.trim(), messages: [...t.messages, { from: "agent", text: draft.trim(), time: new Date().toLocaleTimeString() }] } : t));
       setDraft(""); flash("Reply saved to the workspace");
     } catch (reason) { flash(reason instanceof Error ? reason.message : "Reply could not be saved."); }
   }
-  const nav = [{ label: "Workspace", items: [{ name: "Inbox", icon: Inbox }] }, { label: "Manage", items: [{ name: "Team", icon: Users }] }];
+  const nav = [{ label: "Workspace", items: [{ name: "Inbox", icon: Inbox }] }, { label: "Manage", items: [{ name: "Team", icon: Users }, ...(isBlockAdmin ? [{ name: "Membership approvals", icon: ClipboardCheck }] : [])] }];
   return <main className="app-shell">
-    <aside className="sidebar"><div className="brand"><span className="brand-mark"><LifeBuoy size={19}/></span><b>resolve<span>ai</span></b></div><button className="workspace-switch"><span className="workspace-avatar">{workspaceName.slice(0,1).toUpperCase()}</span><span><b>{workspaceName}</b><small>Private workspace</small></span><ChevronDown size={15}/></button>
+    <aside className="sidebar"><div className="brand"><span className="brand-mark"><LifeBuoy size={19}/></span><b>resolve<span>ai</span></b></div><div className="workspace-switch"><span className="workspace-avatar">{workspaceName.slice(0,1).toUpperCase()}</span><span style={{minWidth:0,flex:1}}><small>{isBlockAdmin?"Block administrator":"Private workspace"}</small><select aria-label="Select workspace" value={workspaceId} onChange={e=>switchWorkspace(e.target.value)} disabled={workspaces.length<2} style={{display:"block",width:"100%",maxWidth:180,border:0,background:"transparent",fontWeight:700,color:"inherit",outline:"none",cursor:workspaces.length<2?"default":"pointer"}}>{workspaces.map(item=><option key={item.id} value={item.id}>{item.unit_code ? "Unit " + item.unit_code : item.name}</option>)}</select></span><ChevronDown size={15}/></div>
       {nav.map(group => <div className="nav-group" key={group.label}><div className="nav-label">{group.label}</div>{group.items.map(item => <button key={item.name} className={section === item.name ? "nav-item active" : "nav-item"} onClick={() => setSection(item.name)}><item.icon size={17}/>{item.name}</button>)}</div>)}
       
       <div className="sidebar-bottom"><div className="usage-card"><b><Sparkles size={13}/> Private workspace</b><small>Team-only access is enabled</small></div><div className="user-row"><div className="avatar">{userEmail.slice(0,2).toUpperCase()}</div><span><b>{userEmail}</b><small>{userRole}</small></span><MoreHorizontal size={17}/></div></div>
     </aside>
     <section className="main-area"><header className="topbar"><div className="breadcrumbs">Workspace <ChevronRight size={14}/><b>{section}</b></div><div className="top-actions"><label className="search-global"><Search size={15}/><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search conversations..."/></label><button className="icon-btn" onClick={() => flash("You're all caught up")}><Bell size={18}/></button><button className="outline-btn" onClick={async()=>{await fetch("/api/auth/logout",{method:"POST"});window.location.href="/login/";}}>Sign out</button><div className="avatar">JD</div></div></header>
       {section === "Inbox" ? <div className="inbox-layout"><section className="inbox-list"><div className="page-heading"><div className="eyebrow">CUSTOMER SUPPORT</div><h1>Inbox <span className="count">{tickets.length}</span></h1><p>Manage and resolve customer conversations.</p><button className="primary-btn new-conversation-toggle" onClick={()=>setShowNewConversation(value=>!value)}>New conversation</button>{showNewConversation && <div className="new-conversation-form"><input value={customerName} onChange={e=>setCustomerName(e.target.value)} placeholder="Customer name"/><input type="email" value={customerEmail} onChange={e=>setCustomerEmail(e.target.value)} placeholder="Customer email (optional)"/><input value={newSubject} onChange={e=>setNewSubject(e.target.value)} placeholder="Subject"/><textarea value={firstMessage} onChange={e=>setFirstMessage(e.target.value)} placeholder="First customer message (optional)"/><button className="primary-btn" disabled={!customerName.trim()||!newSubject.trim()} onClick={createConversation}>Create conversation</button></div>}</div><div className="tabs">{["All","Open","Pending","Resolved"].map(f => <button key={f} className={filter === f ? "tab active-tab" : "tab"} onClick={() => setFilter(f)}>{f}</button>)}</div><div className="conversation-list">{filtered.map(t => <button key={t.id} className={selected === t.id ? "conversation selected" : "conversation"} onClick={() => setSelected(t.id)}><div className="avatar">{t.initials}</div><div className="conversation-main"><div className="conversation-top"><b>{t.name}</b><time>{t.time}</time></div><strong>{t.subject}</strong><p>{t.preview}</p><small className="tag">{t.tag}</small></div></button>)}{filtered.length === 0 && <p className="empty-state">{loadingTickets ? "Loading conversations…" : apiError || "No conversations yet. Create one to get started."}</p>}</div></section>
-      <section className="conversation-detail"><div className="detail-header"><div className="avatar">{active.initials}</div><div className="detail-person"><b>{active.subject}</b><small>{active.name} · {active.email}</small></div><button className="outline-btn" disabled={!active.id} onClick={async () => { const next = active.status === "Resolved" ? "open" : "resolved"; const response = await fetch(`/api/conversations/${encodeURIComponent(active.id)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ status: next }) }); if (!response.ok) { const data = await response.json(); flash(data.error || "Status update failed."); return; } setTickets(old => old.map(t => t.id === selected ? { ...t, status: next === "resolved" ? "Resolved" : "Open" } : t)); flash("Conversation status saved"); }}>{active.status === "Resolved" ? "Reopen" : "Resolve"}</button></div><div className="detail-subbar"><span className={"status-pill " + active.status.toLowerCase()}>{active.status}</span><span>· {active.tag}</span><span>· Assigned to you</span></div><div className="thread"><div className="thread-date">Today · Conversation</div>{active.messages.map((m,i) => <div className={"message-row " + (m.from === "agent" ? "from-agent" : "")} key={i}><div className="message-content"><div className="message-meta"><b>{m.from === "agent" ? "Jordan Davis" : active.name}</b><time>{m.time}</time></div><div className="message-bubble">{m.text}</div></div></div>)}<div className="reply-box"><div className="reply-mode"><MessageCircle size={14}/> Reply <span>Saved internally · not delivered</span></div><textarea value={draft} onChange={e => setDraft(e.target.value)} placeholder="Write a reply..."/><div className="reply-tools"><small>{aiInsight ? "AI-assisted draft · Review before sending" : "AI Copilot · Draft mode"}</small><button className="primary-btn" onClick={sendReply} disabled={!active.id || !draft.trim()}>Save reply <Send size={14}/></button></div></div></div></section>
-      <aside className="copilot-panel"><div className="copilot-heading"><span className="copilot-icon"><Sparkles size={17}/></span><div><b>AI Copilot</b><small>Here to help you resolve faster</small></div></div><div className="demo-banner live-ai-banner">Free offline demo · Rule-based suggestions only (not a language model). Review every draft before sending.</div><button className="primary-btn ai-analyze-btn" onClick={analyzeConversation} disabled={aiLoading || !active.id}>{aiLoading ? "Analyzing..." : "Analyze conversation"} <Sparkles size={14}/></button>{aiError && <div className="ai-error" role="alert">{aiError}</div>}{aiInsight ? <><div className="insight-card"><b>Customer sentiment</b><span>{aiInsight.sentiment}</span></div><div className="insight-card"><b>Urgency</b><span>{aiInsight.urgency}</span></div><div className="insight-card"><b>Detected intent</b><span>{aiInsight.intent}</span></div><div className="copilot-tip"><b>Next step</b><br/>{aiInsight.next_step}</div><div className="ai-draft"><b>Suggested reply</b><p>{aiInsight.suggested_reply}</p>{aiInsight.disclaimer && <small>{aiInsight.disclaimer}</small>}<button className="outline-btn" onClick={() => setDraft(aiInsight.suggested_reply)}>Use this draft</button></div></> : <div className="copilot-tip">Select “Analyze conversation” for a free, rule-based demo analysis. It does not use a paid AI API.</div>}</aside></div> : section === "Team" ? <TeamPanel /> : <div className="content-page"><div className="eyebrow">RESOLVEAI WORKSPACE</div><h1>{section}</h1><p>This section is part of the ResolveAI starter dashboard.</p><div className="placeholder-card"><Sparkles size={22}/><b>{section}</b><span>Choose Inbox to return to customer conversations.</span><button className="primary-btn" onClick={() => setSection("Inbox")}>Open inbox</button></div></div>}
+      <section className="conversation-detail"><div className="detail-header"><div className="avatar">{active.initials}</div><div className="detail-person"><b>{active.subject}</b><small>{active.name} · {active.email}</small></div><button className="outline-btn" disabled={!active.id} onClick={async () => { const next = active.status === "Resolved" ? "open" : "resolved"; const response = await fetch(`/api/conversations/${encodeURIComponent(active.id)}`, { method: "PATCH", headers: { "content-type": "application/json", "X-ResolveAI-Workspace": workspaceId }, body: JSON.stringify({ status: next }) }); if (!response.ok) { const data = await response.json(); flash(data.error || "Status update failed."); return; } setTickets(old => old.map(t => t.id === selected ? { ...t, status: next === "resolved" ? "Resolved" : "Open" } : t)); flash("Conversation status saved"); }}>{active.status === "Resolved" ? "Reopen" : "Resolve"}</button></div><div className="detail-subbar"><span className={"status-pill " + active.status.toLowerCase()}>{active.status}</span><span>· {active.tag}</span><span>· Assigned to you</span></div><div className="thread"><div className="thread-date">Today · Conversation</div>{active.messages.map((m,i) => <div className={"message-row " + (m.from === "agent" ? "from-agent" : "")} key={i}><div className="message-content"><div className="message-meta"><b>{m.from === "agent" ? "Jordan Davis" : active.name}</b><time>{m.time}</time></div><div className="message-bubble">{m.text}</div></div></div>)}<div className="reply-box"><div className="reply-mode"><MessageCircle size={14}/> Reply <span>Saved internally · not delivered</span></div><textarea value={draft} onChange={e => setDraft(e.target.value)} placeholder="Write a reply..."/><div className="reply-tools"><small>{aiInsight ? "AI-assisted draft · Review before sending" : "AI Copilot · Draft mode"}</small><button className="primary-btn" onClick={sendReply} disabled={!active.id || !draft.trim()}>Save reply <Send size={14}/></button></div></div></div></section>
+      <aside className="copilot-panel"><div className="copilot-heading"><span className="copilot-icon"><Sparkles size={17}/></span><div><b>AI Copilot</b><small>Here to help you resolve faster</small></div></div><div className="demo-banner live-ai-banner">Free offline demo · Rule-based suggestions only (not a language model). Review every draft before sending.</div><button className="primary-btn ai-analyze-btn" onClick={analyzeConversation} disabled={aiLoading || !active.id}>{aiLoading ? "Analyzing..." : "Analyze conversation"} <Sparkles size={14}/></button>{aiError && <div className="ai-error" role="alert">{aiError}</div>}{aiInsight ? <><div className="insight-card"><b>Customer sentiment</b><span>{aiInsight.sentiment}</span></div><div className="insight-card"><b>Urgency</b><span>{aiInsight.urgency}</span></div><div className="insight-card"><b>Detected intent</b><span>{aiInsight.intent}</span></div><div className="copilot-tip"><b>Next step</b><br/>{aiInsight.next_step}</div><div className="ai-draft"><b>Suggested reply</b><p>{aiInsight.suggested_reply}</p>{aiInsight.disclaimer && <small>{aiInsight.disclaimer}</small>}<button className="outline-btn" onClick={() => setDraft(aiInsight.suggested_reply)}>Use this draft</button></div></> : <div className="copilot-tip">Select “Analyze conversation” for a free, rule-based demo analysis. It does not use a paid AI API.</div>}</aside></div> : section === "Team" ? <TeamPanel workspaceId={workspaceId} /> : section === "Membership approvals" ? <div className="content-page"><div className="eyebrow">BLOCK ADMINISTRATION</div><h1>Membership approvals</h1><p>Review new applications and assign existing accounts to their verified unit.</p><button className="primary-btn" onClick={()=>window.location.href="/admin/memberships/"}>Open membership and account mapping</button></div> : <div className="content-page"><div className="eyebrow">RESOLVEAI WORKSPACE</div><h1>{section}</h1><p>This section is part of the ResolveAI starter dashboard.</p><div className="placeholder-card"><Sparkles size={22}/><b>{section}</b><span>Choose Inbox to return to customer conversations.</span><button className="primary-btn" onClick={() => setSection("Inbox")}>Open inbox</button></div></div>}
       {notice && <div className="toast"><Check size={16}/>{notice}</div>}
     </section>
   </main>;

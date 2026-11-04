@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-BASE_URL="${RESOLVEAI_URL:-https://hotfix-production-d1-batch-pbkdf2-resolveai.aflakshhr.workers.dev}"
+BASE_URL="${RESOLVEAI_URL:-https://feature-unit-membership-approval-resolveai.aflakshhr.workers.dev}"
 BASE_URL="${BASE_URL%/}"
 FILE="$(mktemp)"
 trap 'rm -f "$FILE"' EXIT
