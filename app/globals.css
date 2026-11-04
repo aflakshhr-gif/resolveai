@@ -797,3 +797,9 @@ button,input,textarea,select{accent-color:#269d96}
 @media(prefers-reduced-motion:reduce){
   .rx-app-shell *, .rx-auth-shell *, .rx-qr-page *{scroll-behavior:auto!important;transition:none!important;animation:none!important}
 }
+
+@media(max-width:760px){.rx-app-shell{display:flex;flex-direction:column}}
+.rx-membership-card{width:100%;max-width:none}
+.rx-admin-card{width:100%;max-width:none}
+.rx-admin-story .rx-auth-brand{margin-bottom:0}
+.rx-auth-shell .auth-footnote button{color:#2b928b;text-decoration:underline;text-underline-offset:3px}
