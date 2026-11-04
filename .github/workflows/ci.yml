@@ -38,6 +38,9 @@ jobs:
       - run: npx --yes wrangler@latest deploy --dry-run
       - name: Verify deployed preview and read-only D1 connectivity
         run: bash scripts/check-preview-health.sh
+      - name: Verify production Worker and read-only D1 connectivity after main deployment
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: RESOLVEAI_URL=https://resolveai.aflakshhr.workers.dev bash scripts/check-preview-health.sh
 
   mobile:
     name: Expo mobile validation
