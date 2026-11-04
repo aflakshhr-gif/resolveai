@@ -14,7 +14,7 @@ assert.doesNotMatch(worker, /env\.DB\.exec\(SCHEMA_SQL\)/,
   "ensureSchema must not pass the full multi-statement schema to D1 exec");
 
 const result = spawnSync("sqlite3", [":memory:"], {
-  input: statements.join(";\\n") + ";\\n",
+  input: statements.join(";") + ";",
   encoding: "utf8",
 });
 assert.equal(result.status, 0, `D1 schema SQL must execute statement-by-statement: ${result.stderr}`);
