@@ -210,8 +210,16 @@ async function auth(request,env,path) {
     if(!env.DB)return json({error:"Database binding DB is not configured."},503);
     // This is a read-only bootstrap probe. The existing users table is present
     // for any installed ResolveAI workspace; do not run DDL on the login screen.
-    const n=await env.DB.prepare("SELECT COUNT(*) AS total FROM users").first();
-    return json({setup_required:Number(n?.total||0)===0,setup_enabled:Boolean(env.RESOLVEAI_SETUP_TOKEN)});
+    try {
+      const n=await env.DB.prepare("SELECT COUNT(*) AS total FROM users").first();
+      return json({setup_required:Number(n?.total||0)===0,setup_enabled:Boolean(env.RESOLVEAI_SETUP_TOKEN)});
+    } catch(error) {
+      const message=String(error?.message||error||"").toLowerCase();
+      if(message.includes("no such table") && message.includes("users")) {
+        return json({setup_required:true,setup_enabled:Boolean(env.RESOLVEAI_SETUP_TOKEN)});
+      }
+      throw error;
+    }
   }
   if(path==="/api/auth/logout"&&request.method==="POST"){
     if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
