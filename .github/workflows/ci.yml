@@ -14,7 +14,7 @@ jobs:
       - name: Validate Worker JavaScript syntax
         run: node --check worker.js
       - name: Validate smoke-test shell syntax
-        run: bash -n scripts/check-resolveai.sh scripts/check-preview-health.sh scripts/test-membership-isolation.sh scripts/test-legacy-session-fallback.sh scripts/test-legacy-account-mapping.sh scripts/test-password-reset.sh
+        run: bash -n scripts/check-resolveai.sh scripts/check-preview-health.sh scripts/test-membership-isolation.sh scripts/test-legacy-session-fallback.sh scripts/test-legacy-account-mapping.sh scripts/test-password-reset.sh scripts/test-apps-script-mailer.sh scripts/test-email-verification.sh
       - name: Verify runtime D1 schema batching
         run: node scripts/test-d1-schema-batch.mjs
       - name: Verify unit workspace data isolation
@@ -25,10 +25,14 @@ jobs:
         run: bash scripts/test-legacy-account-mapping.sh
       - name: Validate dedicated D1 schema migrations
         run: |
-          cat migrations/0001_initial.sql migrations/0002_team_invites.sql migrations/0003_unit_membership_workspaces.sql migrations/0004_block_admin_workspaces.sql migrations/0005_password_reset.sql | sqlite3 :memory:
+          cat migrations/0001_initial.sql migrations/0002_team_invites.sql migrations/0003_unit_membership_workspaces.sql migrations/0004_block_admin_workspaces.sql migrations/0005_password_reset.sql migrations/0006_email_verification.sql | sqlite3 :memory:
           test "$(sqlite3 :memory: 'SELECT 1')" = "1"
       - name: Verify password reset token safety
         run: bash scripts/test-password-reset.sh
+      - name: Verify Google Apps Script mailer syntax and required safeguards
+        run: bash scripts/test-apps-script-mailer.sh
+      - name: Verify public email verification token lifecycle and legacy compatibility
+        run: bash scripts/test-email-verification.sh
 
   web:
     name: Web typecheck, static export and Workers dry run

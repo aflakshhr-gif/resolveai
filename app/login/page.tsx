@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-type Mode = "loading" | "login" | "register" | "setup" | "invite" | "unavailable" | "forgot" | "reset";
+type Mode = "loading" | "login" | "register" | "setup" | "invite" | "unavailable" | "forgot" | "reset" | "verify_pending" | "verify_email";
 
 async function readApiJson(response: Response): Promise<any> {
   const raw = await response.text();
@@ -20,6 +20,7 @@ export default function LoginPage() {
   const [mode, setMode] = useState<Mode>("login");
   const [inviteToken, setInviteToken] = useState("");
   const [resetToken, setResetToken] = useState("");
+  const [verificationToken, setVerificationToken] = useState("");
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
@@ -34,7 +35,14 @@ export default function LoginPage() {
     const params = new URLSearchParams(window.location.search);
     const token = params.get("invite") || "";
     const passwordResetToken = params.get("reset_token") || "";
+    const emailVerificationToken = params.get("verify_token") || "";
     setInviteToken(token);
+    if (emailVerificationToken) {
+      setVerificationToken(emailVerificationToken);
+      setMode("verify_email");
+      window.history.replaceState({}, "", "/login/");
+      return;
+    }
     if (passwordResetToken) {
       setResetToken(passwordResetToken);
       setMode("reset");
@@ -60,6 +68,34 @@ export default function LoginPage() {
     event.preventDefault();
     setBusy(true); setError(""); setNotice("");
     try {
+      if (mode === "verify_email") {
+        const response = await fetch("/api/auth/email-verification/complete", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ token: verificationToken }),
+          credentials: "same-origin"
+        });
+        const data = await readApiJson(response);
+        if (!response.ok) throw new Error(data.error || "Could not verify this email address.");
+        setVerificationToken("");
+        router.replace("/membership/");
+        router.refresh();
+        return;
+      }
+
+      if (mode === "verify_pending") {
+        const response = await fetch("/api/auth/email-verification/request", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ email }),
+          credentials: "same-origin"
+        });
+        const data = await readApiJson(response);
+        if (!response.ok) throw new Error(data.error || "Could not request another verification email.");
+        setNotice(data.message || "If this account requires email verification, a new link will be sent shortly.");
+        return;
+      }
+
       if (mode === "forgot") {
         const response = await fetch("/api/auth/password-reset/request", {
           method: "POST",
@@ -98,7 +134,17 @@ export default function LoginPage() {
         : mode === "invite" ? { email, password, name, invite_token: inviteToken } : { email, password };
       const response = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), credentials: "same-origin" });
       const data = await readApiJson(response);
+      if (!response.ok && data.code === "EMAIL_NOT_VERIFIED") {
+        setMode("verify_pending");
+        setNotice(data.error || "Verify your email address before signing in.");
+        return;
+      }
       if (!response.ok) throw new Error([data.error || "Sign in failed.", data.code ? "Diagnostic: " + data.code : ""].filter(Boolean).join(" — "));
+      if (mode === "register" && data.requires_email_verification) {
+        setMode("verify_pending");
+        setNotice(data.message || "Check your inbox for a verification link. You must verify your email before signing in.");
+        return;
+      }
       router.replace("/");
       router.refresh();
     } catch (reason) {
@@ -114,6 +160,8 @@ export default function LoginPage() {
     : mode === "unavailable" ? "Workspace unavailable"
     : mode === "forgot" ? "Forgot your password?"
     : mode === "reset" ? "Create a new password"
+    : mode === "verify_pending" ? "Verify your email"
+    : mode === "verify_email" ? "Confirm your email address"
     : "Welcome back";
 
   const description = mode === "setup" ? "Set up the first administrator account."
@@ -122,6 +170,8 @@ export default function LoginPage() {
     : mode === "unavailable" ? "The workspace needs its database connection before you can sign in."
     : mode === "forgot" ? "Enter the email address associated with your ResolveAI account. We will send a one-time reset link if an account exists."
     : mode === "reset" ? "Choose a new password with at least 12 characters. The reset link can be used once and expires after 30 minutes."
+    : mode === "verify_pending" ? "Your account has been created. Open the verification link in your email to activate it, or request a new link below."
+    : mode === "verify_email" ? "Confirm that you own this email address. The link can be used once and expires after 24 hours."
     : "Sign in to your ResolveAI account.";
 
   return <main className="auth-shell">
@@ -132,8 +182,8 @@ export default function LoginPage() {
       <p className="auth-description">{description}</p>
       {mode === "loading" ? <div className="auth-loading">Checking secure workspace…</div> : mode === "unavailable" ? <div className="auth-error">{error}</div> : <form onSubmit={submit} className="auth-form">
         {mode === "setup" || mode === "invite" ? <label>Your name<input value={name} onChange={e=>setName(e.target.value)} autoComplete="name" required maxLength={80} placeholder="Your name"/></label> : null}
-        {mode !== "reset" ? <label>Work email<input type="email" value={email} onChange={e=>setEmail(e.target.value)} autoComplete="username" required maxLength={254} placeholder="you@company.com"/></label> : null}
-        {mode !== "forgot" ? <label>{mode === "reset" ? "New password" : "Password"}<input type="password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} required minLength={12} maxLength={128} placeholder="At least 12 characters"/></label> : null}
+        {mode !== "reset" && mode !== "verify_email" ? <label>Work email<input type="email" value={email} onChange={e=>setEmail(e.target.value)} autoComplete="username" required maxLength={254} placeholder="you@company.com"/></label> : null}
+        {!["forgot","reset","verify_email","verify_pending"].includes(mode) ? <label>{mode === "reset" ? "New password" : "Password"}<input type="password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} required minLength={12} maxLength={128} placeholder="At least 12 characters"/></label> : null}
         {mode === "reset" ? <label>Confirm new password<input type="password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} autoComplete="new-password" required minLength={12} maxLength={128} placeholder="Enter the new password again"/></label> : null}
         {mode === "setup" ? <>
           <label>Workspace name<input value={workspaceName} onChange={e=>setWorkspaceName(e.target.value)} maxLength={80}/></label>
@@ -141,13 +191,13 @@ export default function LoginPage() {
         </> : null}
         {error ? <div className="auth-error" role="alert">{error}</div> : null}
         {notice ? <div className="auth-footnote" role="status">{notice}</div> : null}
-        <button className="auth-submit" type="submit" disabled={busy}>{busy ? "Please wait…" : mode === "setup" ? "Create administrator account" : mode === "invite" ? "Join workspace" : mode === "register" ? "Create account" : mode === "forgot" ? "Send reset link" : mode === "reset" ? "Save new password" : "Sign in"}</button>
+        <button className="auth-submit" type="submit" disabled={busy}>{busy ? "Please wait…" : mode === "setup" ? "Create administrator account" : mode === "invite" ? "Join workspace" : mode === "register" ? "Create account" : mode === "forgot" ? "Send reset link" : mode === "reset" ? "Save new password" : mode === "verify_pending" ? "Resend verification email" : mode === "verify_email" ? "Verify email address" : "Sign in"}</button>
       </form>}
       {mode === "login" ? <>
         <button type="button" className="outline-btn" onClick={() => { setMode("forgot"); setError(""); setNotice(""); setPassword(""); }}>Forgot password?</button>
         <button type="button" className="outline-btn" onClick={() => { setMode("register"); setError(""); setNotice(""); }}>Create a public account</button>
       </> : mode === "register" ? <button type="button" className="outline-btn" onClick={() => { setMode("login"); setError(""); setNotice(""); }}>Already have an account? Sign in</button>
-      : mode === "forgot" || mode === "reset" ? <button type="button" className="outline-btn" onClick={() => { setMode("login"); setError(""); setNotice(""); setPassword(""); setConfirmPassword(""); setResetToken(""); window.history.replaceState({}, "", "/login/"); }}>Back to sign in</button>
+      : mode === "forgot" || mode === "reset" || mode === "verify_pending" || mode === "verify_email" ? <button type="button" className="outline-btn" onClick={() => { setMode("login"); setError(""); setNotice(""); setPassword(""); setConfirmPassword(""); setResetToken(""); setVerificationToken(""); window.history.replaceState({}, "", "/login/"); }}>Back to sign in</button>
       : null}
       <div className="auth-footnote"><span className="auth-lock">●</span> Public entry · Private access after approval</div>
     </section>

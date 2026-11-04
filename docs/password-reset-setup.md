@@ -1,42 +1,62 @@
-# ResolveAI password-reset email setup
+# ResolveAI email delivery and verification (free Gmail bridge)
 
-The password-reset flow sends a one-time link. The Worker stores only a SHA-256 digest of the token; it never sends or stores the user's new password in email.
+ResolveAI uses a one-time email link for new public registrations and password recovery. The Google Apps Script bridge sends both message types through the Gmail account that owns the script. No custom domain or paid email provider is required.
 
-## Recommended provider: Cloudflare Email Service
+New public accounts cannot sign in or submit a membership application until their email address is verified. Existing legacy accounts are not forced through a new verification step. Password-reset links expire after 30 minutes; signup-verification links expire after 24 hours. Both are single-use and only token hashes are stored in D1.
 
-This branch declares an `EMAIL` binding in the **Preview** configuration only. Production does not receive the binding from this change.
+## 1. Create the Gmail mailer
 
-1. In Cloudflare, open **Compute → Email Service → Email Sending**.
-2. Choose **Onboard Domain** and select a domain in your Cloudflare account that uses Cloudflare DNS.
-3. Publish/accept the SPF, DKIM, and DMARC records Cloudflare provides, then wait for the domain to be verified.
-4. Add your own Gmail address as a verified destination address if the account is on Workers Free. Free plans can send to verified destination addresses; arbitrary recipients require Workers Paid.
-5. Choose a sender address on the verified domain, for example `no-reply@your-domain.example`.
-6. Set the Preview variable `RESOLVEAI_FROM_EMAIL` to that sender address. Keep `RESOLVEAI_PUBLIC_URL` as configured in `wrangler.jsonc`.
+1. Sign in to the Google account that should send ResolveAI messages.
+2. Open https://script.google.com and create a new standalone project named `ResolveAI Mailer`.
+3. Replace the contents of `Code.gs` with the repository file [apps-script/Code.gs](../apps-script/Code.gs).
+4. In **Project Settings → Script properties**, add:
+   - `RESOLVEAI_SHARED_SECRET`: a randomly generated secret with at least 40 characters. Use a password manager to generate it. Do not reuse a Google password.
+   - `RESOLVEAI_ALLOWED_ORIGINS`: `https://resolveai.aflakshhr.workers.dev,https://feature-unit-membership-approval-resolveai.aflakshhr.workers.dev`
+5. Save the project.
+6. Select **Deploy → New deployment → Web app**:
+   - Execute as: **Me**
+   - Who has access: **Anyone**
+7. Click Deploy and approve Google's permission request to send email.
+8. Copy the Web app URL ending in `/exec`. Do not use the editor URL.
 
-Do not add the sender address or Email binding to Production until Preview password recovery has been tested.
+The endpoint is publicly reachable because Cloudflare must call it without a Google login. It rejects requests without the long random shared secret, supports only the two fixed message types, validates recipients and exact ResolveAI origins, and never logs the request body or one-time tokens. Keep the script project private; do not add untrusted editors.
 
-## Optional provider: Resend
+## 2. Configure Cloudflare Production
 
-The Worker also supports Resend as a fallback when the Cloudflare `EMAIL` binding is unavailable. To use it instead:
+Open **Workers & Pages → resolveai → Settings → Variables and Secrets** and add:
 
-- Set `RESEND_API_KEY` as a Cloudflare Secret on the Preview only.
-- Set `RESOLVEAI_FROM_EMAIL` to a sender on a domain verified with Resend.
-- Keep `RESOLVEAI_PUBLIC_URL` set to the stable Preview origin.
+| Name | Type | Value |
+|---|---|---|
+| `GOOGLE_APPS_SCRIPT_URL` | Variable | The Apps Script Web app URL ending in `/exec` |
+| `GOOGLE_APPS_SCRIPT_TOKEN` | Secret | The exact same random value used for `RESOLVEAI_SHARED_SECRET` |
+| `RESOLVEAI_PUBLIC_URL` | Variable | `https://resolveai.aflakshhr.workers.dev` |
 
-Never commit an API key to Git, paste it into a GitHub issue, or send it in chat.
+Save and deploy the Worker. Do not put the shared secret in a normal variable, source file, GitHub commit, or chat. The Worker uses Google Apps Script first when both Google settings are present. Existing Cloudflare Email Service and Resend paths remain as fallbacks.
 
-## Preview test procedure
+For Preview testing, add the same two Google settings to the Preview environment. The Script Properties above already allow both the production and stable Preview origins.
 
-1. Open the stable Preview URL and choose **Forgot password?**
-2. Enter the email address of an existing Preview account.
-3. Check the inbox (and spam folder) for the reset message.
-4. Follow the link within 30 minutes.
-5. Set a new password of at least 12 characters and confirm it.
-6. Sign in with the new password. All existing sessions for that account should have been revoked.
-7. Confirm an expired or previously used link is rejected.
+## 3. Test new-account verification
 
-The request endpoint returns the same response whether or not an account exists, to avoid exposing registered addresses. Requests are rate-limited by hashed email and IP. Tokens are random, stored only as SHA-256 digests, expire after 30 minutes, and can be used once.
+1. Open https://resolveai.aflakshhr.workers.dev/login/
+2. Choose **Create a public account** and complete the registration form.
+3. Open the message titled **Verify your ResolveAI email**.
+4. Select **Verify email address**. The browser will confirm the address and continue to the unit membership form.
+5. Try signing in before verification in a separate browser: it must be rejected until the email link is used.
+6. If the message does not arrive, return to the login page, choose the verification screen, and request another link.
 
-## Before Production
+## 4. Test password recovery
 
-Configure the sending domain and sender separately for Production, and add the production email binding only after delivery, reset-link expiry, one-time use, and session revocation have been verified on Preview. Keep the Preview D1 binding pointed at `resolveai-preview-db`; do not connect it to the Production database.
+1. On the sign-in page choose **Forgot password?** and enter an existing account email.
+2. Check its inbox and spam folder for **Reset your ResolveAI password**.
+3. Open the link within 30 minutes, enter a new password of at least 12 characters, and sign in again.
+4. Confirm that the old password no longer works. Existing sessions are revoked after a successful reset.
+
+Google Apps Script's published quota for consumer Gmail accounts is currently 100 email recipients per day. This is suitable for a small deployment and testing, not bulk mail. Google may change quotas without notice. See [Apps Script quotas](https://developers.google.com/apps-script/guides/services/quotas) and [Web App deployment](https://developers.google.com/apps-script/guides/web).
+
+## Important rollout notes
+
+- Apps Script sends from the Gmail account that owns the script; it does not create a custom `no-reply` domain sender.
+- The first Apps Script deployment requires the account owner to authorize sending.
+- If Google does not offer **Anyone** access for the Web App, the endpoint cannot be called by the Cloudflare Worker as configured.
+- The first public signup is email-verified before sign-in. The initial administrator setup and existing legacy accounts are not blocked by this public-registration check.
+- Never share verification links, reset links, the shared secret, Google credentials, or Cloudflare secrets.
