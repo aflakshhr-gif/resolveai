@@ -350,14 +350,21 @@ export default {
       return json({error:"Not found."},404);
     }
     if(path==="/membership"||path==="/admin/memberships"){
-      const session=await sessionFor(request,env);\n      if(!session)return Response.redirect(new URL("/login/",request.url),302);\n      if(path==="/admin/memberships"&&!["owner","admin"].includes(session.role))return new Response("Forbidden",{status:403});\n      if(path==="/membership"&&session.membership_status==="approved")return Response.redirect(new URL("/",request.url),302);\n      return securePage(await env.ASSETS.fetch(request));\n    }\n    if(path==="/login"){
       const session=await sessionFor(request,env);
-      return session?Response.redirect(new URL("/",request.url),302):securePage(await env.ASSETS.fetch(request));
+      if(!session)return Response.redirect(new URL("/login/",request.url),302);
+      if(path==="/admin/memberships"&&!["owner","admin"].includes(session.role))return new Response("Forbidden",{status:403});
+      if(path==="/membership"&&session.membership_status==="approved")return Response.redirect(new URL("/",request.url),302);
+      return securePage(await env.ASSETS.fetch(request));
+    }
+    if(path==="/login"){
+      const session=await sessionFor(request,env);
+      return session?Response.redirect(new URL(session.membership_status==="approved"?"/":"/membership/",request.url),302):securePage(await env.ASSETS.fetch(request));
     }
     if(path==="/website"||path==="/qr")return securePage(await env.ASSETS.fetch(request));
     if(publicAsset(path))return env.ASSETS.fetch(request);
     const session=await sessionFor(request,env);
     if(!session)return Response.redirect(new URL("/login/",request.url),302);
+    if(session.membership_status!=="approved")return Response.redirect(new URL("/membership/",request.url),302);
     return securePage(await env.ASSETS.fetch(request));
   }
 };
