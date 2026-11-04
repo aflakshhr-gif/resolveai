@@ -49,7 +49,7 @@ export default function LoginPage() {
         : mode === "invite" ? { email, password, name, invite_token: inviteToken } : { email, password };
       const response = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), credentials: "same-origin" });
       const data = await readApiJson(response);
-      if (!response.ok) throw new Error(data.error || "Sign in failed.");
+      if (!response.ok) throw new Error([data.error || "Sign in failed.", data.code ? "Diagnostic: " + data.code : ""].filter(Boolean).join(" — "));
       router.replace("/");
       router.refresh();
     } catch (reason) {
