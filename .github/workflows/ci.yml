@@ -13,8 +13,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate Worker JavaScript syntax
         run: node --check worker.js
-      - name: Verify legacy password hash compatibility
-        run: node scripts/test-password-hash-compat.mjs
       - name: Validate smoke-test shell syntax
         run: bash -n scripts/check-resolveai.sh scripts/test-membership-isolation.sh
       - name: Verify unit workspace data isolation
@@ -33,6 +31,8 @@ jobs:
         with:
           node-version: 22
       - run: npm install
+      - name: Verify legacy password hash compatibility
+        run: node scripts/test-password-hash-compat.mjs
       - run: npx tsc --noEmit
       - run: npm run build
       - run: npx --yes wrangler@latest deploy --dry-run
