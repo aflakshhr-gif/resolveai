@@ -60,7 +60,7 @@ let schemaPromise;
 async function ensureSchema(env) {
   if (!env.DB) throw new Error("Database binding DB is not configured.");
   if (!schemaPromise) {
-    schemaPromise = env.DB.exec(SCHEMA_SQL).catch(error => { schemaPromise = null; throw error; });
+    const statements = SCHEMA_SQL.split(';').map(statement => statement.trim()).filter(Boolean);\n    schemaPromise = env.DB.batch(statements.map(statement => env.DB.prepare(statement))).catch(error => { schemaPromise = null; throw error; });
   }
   await schemaPromise;
 }
@@ -134,6 +134,22 @@ async function auth(request,env,path) {
       env.DB.prepare("INSERT INTO workspace_members (workspace_id,user_id,role) VALUES (?,?,'owner')").bind(wid,id)
     ]);
     return json({ok:true},201,{"set-cookie":cookie(await newSession(env,id))});
+  }
+  if(path==="/api/auth/register"&&request.method==="POST"){
+    if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
+    const b=await body(request);
+    if(!b||!validEmail(b.email)||!validPassword(b.password))return json({error:"Enter a valid email and a password with at least 12 characters."},400);
+    const exists=await env.DB.prepare("SELECT id FROM users WHERE email=? COLLATE NOCASE").bind(b.email.trim()).first();
+    if(exists)return json({error:"An account with this email already exists. Please sign in."},409);
+    const workspace=await env.DB.prepare("SELECT id FROM workspaces ORDER BY created_at LIMIT 1").first();
+    if(!workspace)return json({error:"The site administrator must complete initial setup before public registration."},503);
+    const id=crypto.randomUUID(),pw=await passwordHash(b.password);
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO users (id,email,password_hash,password_salt) VALUES (?,?,?,?)").bind(id,b.email.trim().toLowerCase(),pw.hash,pw.salt),
+      env.DB.prepare("INSERT INTO workspace_members (workspace_id,user_id,role) VALUES (?,?,'viewer')").bind(workspace.id,id),
+      env.DB.prepare("INSERT INTO membership_requests (user_id,status) VALUES (?,'not_submitted')").bind(id)
+    ]);
+    return json({ok:true,requires_membership:true},201,{"set-cookie":cookie(await newSession(env,id))});
   }
   if(path==="/api/auth/login"&&request.method==="POST"){
     if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
@@ -275,7 +291,36 @@ export default {
       if(!env.DB)return json({error:"Database binding DB is not configured."},503);
       const session=await sessionFor(request,env);
       if(!session)return json({error:"Authentication required."},401);
-      if(path==="/api/auth/me"&&request.method==="GET")return json({user:{id:session.user_id,email:session.email},workspace:{id:session.workspace_id,name:session.workspace_name},role:session.role});
+      if(path==="/api/auth/me"&&request.method==="GET")return json({user:{id:session.user_id,email:session.email},workspace:{id:session.workspace_id,name:session.workspace_name},role:session.role,membership_status:session.membership_status});
+      if(path==="/api/membership"&&request.method==="GET"){
+        const own=await env.DB.prepare("SELECT full_name,phone,identity_number,unit_code,unit_details,resident_type,payment_method,payment_reference,status,review_note,updated_at FROM membership_requests WHERE user_id=?").bind(session.user_id).first();
+        if(["owner","admin"].includes(session.role)){
+          const rows=await env.DB.prepare("SELECT mr.user_id,u.email,mr.full_name,mr.phone,mr.identity_number,mr.unit_code,mr.unit_details,mr.resident_type,mr.payment_method,mr.payment_reference,mr.status,mr.created_at,mr.updated_at FROM membership_requests mr JOIN users u ON u.id=mr.user_id WHERE mr.status IN ('pending','rejected') ORDER BY mr.updated_at ASC LIMIT 200").all();
+          return json({request:own,requests:rows.results||[]});
+        }
+        return json({request:own});
+      }
+      if(path==="/api/membership"&&request.method==="POST"){
+        if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
+        if(session.membership_status==="approved")return json({error:"Your membership is already approved."},409);
+        const b=await body(request);
+        const fields=["full_name","phone","identity_number","unit_code","unit_details","resident_type","payment_method","payment_reference"];
+        if(!b||fields.some(k=>typeof b[k]!=="string")||!b.full_name.trim()||!b.phone.trim()||!b.identity_number.trim()||!b.unit_code.trim()||!b.unit_details.trim()||!["owner","tenant","family"].includes(b.resident_type)||!["bank_transfer","cash","other"].includes(b.payment_method)||!b.payment_reference.trim())return json({error:"Complete all required identity, unit and payment-reference fields."},400);
+        const vals=fields.map(k=>String(b[k]).trim().slice(0,k==="unit_details"?500:160));
+        await env.DB.prepare("INSERT INTO membership_requests (user_id,full_name,phone,identity_number,unit_code,unit_details,resident_type,payment_method,payment_reference,status,review_note,updated_at) VALUES (?,?,?,?,?,?,?,?,?,'pending',NULL,?) ON CONFLICT(user_id) DO UPDATE SET full_name=excluded.full_name,phone=excluded.phone,identity_number=excluded.identity_number,unit_code=excluded.unit_code,unit_details=excluded.unit_details,resident_type=excluded.resident_type,payment_method=excluded.payment_method,payment_reference=excluded.payment_reference,status='pending',reviewed_by_user_id=NULL,reviewed_at=NULL,review_note=NULL,updated_at=excluded.updated_at").bind(session.user_id,...vals,new Date().toISOString()).run();
+        return json({ok:true,status:"pending"},201);
+      }
+      const membershipReview=path.match(/^\/api\/membership\/([^/]+)$/);
+      if(membershipReview&&request.method==="PATCH"){
+        if(!["owner","admin"].includes(session.role))return json({error:"Only block administrators can review memberships."},403);
+        if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
+        const b=await body(request),userId=decodeURIComponent(membershipReview[1]);
+        if(!["approved","rejected"].includes(b?.status))return json({error:"Choose approve or reject."},400);
+        const result=await env.DB.prepare("UPDATE membership_requests SET status=?,reviewed_by_user_id=?,reviewed_at=?,review_note=?,updated_at=? WHERE user_id=? AND status IN ('pending','rejected')").bind(b.status,session.user_id,new Date().toISOString(),typeof b.note==="string"?b.note.trim().slice(0,500):null,new Date().toISOString(),userId).run();
+        if(!result.meta?.changes)return json({error:"Pending membership request not found."},404);
+        return json({ok:true,status:b.status});
+      }
+      if(session.membership_status!=="approved")return json({error:"Complete your unit membership form and wait for block administrator approval.",membership_required:true},403);
       if(path==="/api/auth/invites"&&request.method==="POST"){
         if(!["owner","admin"].includes(session.role))return json({error:"Only workspace admins can invite members."},403);
         const b=await body(request),email=b?.email,role=b?.role;
@@ -289,7 +334,7 @@ export default {
       if(path==="/api/conversations"||path.startsWith("/api/conversations/"))return conversationsApi(request,env,session,path);
       return json({error:"Not found."},404);
     }
-    if(path==="/login"){
+    if(path==="/membership"||path==="/admin/memberships"){\n      const session=await sessionFor(request,env);\n      if(!session)return Response.redirect(new URL("/login/",request.url),302);\n      if(path==="/admin/memberships"&&!["owner","admin"].includes(session.role))return new Response("Forbidden",{status:403});\n      if(path==="/membership"&&session.membership_status==="approved")return Response.redirect(new URL("/",request.url),302);\n      return securePage(await env.ASSETS.fetch(request));\n    }\n    if(path==="/login"){
       const session=await sessionFor(request,env);
       return session?Response.redirect(new URL("/",request.url),302):securePage(await env.ASSETS.fetch(request));
     }
