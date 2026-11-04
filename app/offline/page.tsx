@@ -14,7 +14,7 @@ export default function OfflinePage() {
         <span className="rx-section-kicker">CONNECTION INTERRUPTED</span>
         <h1>You're offline<br/><em>for the moment.</em></h1>
         <p>ResolveAI cannot reach the network right now. Your workspace data is protected. Check your connection, then try loading the page again.</p>
-        <button type="button" className="rx-offline-retry" onClick={()=>window.location.reload()}><RefreshCw size={15}/> Try again</button>
+        <a href="/" className="rx-offline-retry"><RefreshCw size={15}/> Try again</a>
         <Link href="/website/" className="rx-offline-home"><ArrowLeft size={14}/> Back to ResolveAI website</Link>
       </section>
       <footer className="rx-offline-footer">ResolveAI · Private support workspace</footer>
