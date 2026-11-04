@@ -1,5 +1,5 @@
-import { pbkdf2 } from "node:crypto";
-import { Buffer } from "node:buffer";
+import { pbkdf2Async } from "@noble/hashes/pbkdf2.js";
+import { sha256 } from "@noble/hashes/sha2.js";
 const requestWindows = new Map();
 const COOKIE = "resolveai_session";
 const SESSION_SECONDS = 604800;
@@ -99,14 +99,15 @@ async function passwordHash(password, saltText) {
   try {
     const salt = saltText ? decode64url(saltText) : crypto.getRandomValues(new Uint8Array(16));
     if (!(salt instanceof Uint8Array) || salt.length < 8 || salt.length > 64) throw new Error("Invalid stored salt length");
-    stage = "pbkdf2";
-    // Keep the original PBKDF2-SHA256/310,000 format for existing account compatibility.
-    const bits = await new Promise((resolve, reject) => {
-      pbkdf2(String(password), Buffer.from(salt), 310000, 32, "sha256", (error, derivedKey) => {
-        if (error) reject(error);
-        else resolve(derivedKey);
-      });
-    });
+    stage = "pbkdf2_noble";
+    // Cloudflare Workers caps native PBKDF2 at 100,000 iterations. Noble's
+    // audited pure-JS implementation preserves the legacy 310,000 format.
+    const bits = await pbkdf2Async(
+      sha256,
+      new TextEncoder().encode(String(password)),
+      salt,
+      { c: 310000, dkLen: 32 }
+    );
     stage = "hash_encoding";
     if (!bits || bits.length !== 32) throw new Error("PBKDF2 returned an unexpected key length");
     let encoded=""; for(const n of bits)encoded+=String.fromCharCode(n);
