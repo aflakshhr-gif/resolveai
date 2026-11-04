@@ -3,6 +3,9 @@
   "main": "./worker.js",
   "compatibility_date": "2026-11-02",
   "workers_dev": true,
+  "vars": {
+    "RESOLVEAI_PUBLIC_URL": "https://resolveai.aflakshhr.workers.dev"
+  },
   "previews": {
     "vars": {
       "RESOLVEAI_PUBLIC_URL": "https://feature-unit-membership-approval-resolveai.aflakshhr.workers.dev"
