@@ -153,6 +153,10 @@ async function auth(request,env,path) {
     if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
     const b=await body(request);
     if(!b||!validEmail(b.email)||!validPassword(b.password))return json({error:"Enter a valid email and a password with at least 12 characters."},400);
+    const ip=request.headers.get("CF-Connecting-IP")||"unknown",key="register:"+ip,now=Date.now();
+    const attempts=(requestWindows.get(key)||[]).filter(t=>now-t<3600000);
+    if(attempts.length>=5)return json({error:"Too many registration attempts. Try again later."},429);
+    attempts.push(now);requestWindows.set(key,attempts);
     const exists=await env.DB.prepare("SELECT id FROM users WHERE email=? COLLATE NOCASE").bind(b.email.trim()).first();
     if(exists)return json({error:"An account with this email already exists. Please sign in."},409);
     const workspace=await env.DB.prepare("SELECT id FROM workspaces ORDER BY created_at LIMIT 1").first();
