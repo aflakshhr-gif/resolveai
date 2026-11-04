@@ -73,6 +73,12 @@ CREATE TABLE IF NOT EXISTS unit_workspaces (
   workspace_id TEXT NOT NULL UNIQUE REFERENCES workspaces(id) ON DELETE CASCADE,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
+CREATE TABLE IF NOT EXISTS block_admins (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+INSERT OR IGNORE INTO block_admins (user_id)
+SELECT owner_user_id FROM workspaces ORDER BY created_at LIMIT 1;
 `;
 let schemaPromise;
 async function ensureSchema(env) {
@@ -134,13 +140,15 @@ async function sessionFor(request,env) {
   const token=bearer||getCookie(request); if(!token||token.length>200)return null;
   const tokenHash=await digest(token);
   const expiresAt=new Date().toISOString();
+  const requestedWorkspace=(request.headers.get("X-ResolveAI-Workspace")||"").trim()||null;
   try {
     return await env.DB.prepare(`SELECT u.id AS user_id,u.email,w.id AS workspace_id,w.name AS workspace_name,wm.role,
       COALESCE(mr.status,'approved') AS membership_status
       FROM sessions s JOIN users u ON u.id=s.user_id JOIN workspace_members wm ON wm.user_id=u.id
       JOIN workspaces w ON w.id=wm.workspace_id LEFT JOIN membership_requests mr ON mr.user_id=u.id
-      WHERE s.token_hash=? AND s.expires_at>? ORDER BY wm.created_at LIMIT 1`)
-      .bind(tokenHash,expiresAt).first();
+      WHERE s.token_hash=? AND s.expires_at>? AND (? IS NULL OR w.id=?)
+      ORDER BY wm.created_at LIMIT 1`)
+      .bind(tokenHash,expiresAt,requestedWorkspace,requestedWorkspace).first();
   } catch(error) {
     // Older workspaces do not have membership tables yet. Existing users remain
     // approved in their current workspace; do not run DDL just to validate a session.
@@ -150,31 +158,40 @@ async function sessionFor(request,env) {
       'approved' AS membership_status
       FROM sessions s JOIN users u ON u.id=s.user_id JOIN workspace_members wm ON wm.user_id=u.id
       JOIN workspaces w ON w.id=wm.workspace_id
-      WHERE s.token_hash=? AND s.expires_at>? ORDER BY wm.created_at LIMIT 1`)
-      .bind(tokenHash,expiresAt).first();
+      WHERE s.token_hash=? AND s.expires_at>? AND (? IS NULL OR w.id=?)
+      ORDER BY wm.created_at LIMIT 1`)
+      .bind(tokenHash,expiresAt,requestedWorkspace,requestedWorkspace).first();
   }
+}
+async function isBlockAdmin(env,userId) {
+  const row=await env.DB.prepare("SELECT 1 AS ok FROM block_admins WHERE user_id=?").bind(userId).first();
+  return Number(row?.ok||0)===1;
 }
 async function ensureUnitWorkspace(env, unitCode, adminUserId) {
   const normalized = String(unitCode || "").trim().toUpperCase();
   if (!normalized) throw new Error("Unit code is required before approval.");
   let link = await env.DB.prepare("SELECT workspace_id FROM unit_workspaces WHERE unit_code=? COLLATE NOCASE").bind(normalized).first();
-  if (link?.workspace_id) return link.workspace_id;
-  const workspaceId = crypto.randomUUID();
-  try {
-    await env.DB.batch([
-      env.DB.prepare("INSERT INTO workspaces (id,name,owner_user_id) VALUES (?,?,?)")
-        .bind(workspaceId, "Unit " + normalized, adminUserId),
-      env.DB.prepare("INSERT INTO unit_workspaces (unit_code,workspace_id) VALUES (?,?)")
-        .bind(normalized, workspaceId)
-    ]);
-  } catch (error) {
-    // A concurrent approval for the same unit may have created the mapping.
-    link = await env.DB.prepare("SELECT workspace_id FROM unit_workspaces WHERE unit_code=? COLLATE NOCASE").bind(normalized).first();
-    if (!link?.workspace_id) throw error;
-    return link.workspace_id;
+  if (!link?.workspace_id) {
+    const workspaceId = crypto.randomUUID();
+    try {
+      await env.DB.batch([
+        env.DB.prepare("INSERT INTO workspaces (id,name,owner_user_id) VALUES (?,?,?)")
+          .bind(workspaceId, "Unit " + normalized, adminUserId),
+        env.DB.prepare("INSERT INTO unit_workspaces (unit_code,workspace_id) VALUES (?,?)")
+          .bind(normalized, workspaceId)
+      ]);
+    } catch (error) {
+      // A concurrent approval for the same unit may have created the mapping.
+      link = await env.DB.prepare("SELECT workspace_id FROM unit_workspaces WHERE unit_code=? COLLATE NOCASE").bind(normalized).first();
+      if (!link?.workspace_id) throw error;
+    }
+    if (!link?.workspace_id) {
+      link = await env.DB.prepare("SELECT workspace_id FROM unit_workspaces WHERE unit_code=? COLLATE NOCASE").bind(normalized).first();
+    }
   }
-  link = await env.DB.prepare("SELECT workspace_id FROM unit_workspaces WHERE unit_code=? COLLATE NOCASE").bind(normalized).first();
   if (!link?.workspace_id) throw new Error("Could not create the private unit workspace.");
+  await env.DB.prepare("INSERT OR IGNORE INTO workspace_members (workspace_id,user_id,role) VALUES (?,?,'admin')")
+    .bind(link.workspace_id,adminUserId).run();
   return link.workspace_id;
 }
 async function newSession(env,userId) {
@@ -411,6 +428,61 @@ export default {
       if(!session)return json({error:"Authentication required."},401);
       if(path!=="/api/auth/me")await ensureSchema(env);
       if(path==="/api/auth/me"&&request.method==="GET")return json({user:{id:session.user_id,email:session.email},workspace:{id:session.workspace_id,name:session.workspace_name},role:session.role,membership_status:session.membership_status});
+      if(path==="/api/workspaces"&&request.method==="GET"){
+        const blockAdmin=await isBlockAdmin(env,session.user_id);
+        if(blockAdmin){
+          await env.DB.prepare(`INSERT OR IGNORE INTO workspace_members (workspace_id,user_id,role)
+            SELECT workspace_id,?,'admin' FROM unit_workspaces`).bind(session.user_id).run();
+        }
+        const rows=await env.DB.prepare(`SELECT w.id,w.name,uw.unit_code,wm.role
+          FROM workspace_members wm JOIN workspaces w ON w.id=wm.workspace_id
+          LEFT JOIN unit_workspaces uw ON uw.workspace_id=w.id
+          WHERE wm.user_id=? ORDER BY CASE WHEN uw.unit_code IS NULL THEN 0 ELSE 1 END,w.name COLLATE NOCASE`)
+          .bind(session.user_id).all();
+        return json({is_block_admin:blockAdmin,workspaces:(rows.results||[]).map(row=>({...row,is_current:row.id===session.workspace_id}))});
+      }
+      if(path==="/api/admin/legacy-members"&&request.method==="GET"){
+        if(!await isBlockAdmin(env,session.user_id))return json({error:"Only the block administrator can map existing accounts."},403);
+        const root=await env.DB.prepare("SELECT id FROM workspaces ORDER BY created_at LIMIT 1").first();
+        if(!root)return json({users:[]});
+        const rows=await env.DB.prepare(`SELECT u.id AS user_id,u.email,wm.role,w.name AS workspace_name
+          FROM users u JOIN workspace_members wm ON wm.user_id=u.id
+          JOIN workspaces w ON w.id=wm.workspace_id
+          LEFT JOIN membership_requests mr ON mr.user_id=u.id
+          WHERE wm.workspace_id=? AND mr.user_id IS NULL
+            AND NOT EXISTS (SELECT 1 FROM block_admins ba WHERE ba.user_id=u.id)
+          ORDER BY u.email COLLATE NOCASE LIMIT 500`).bind(root.id).all();
+        return json({users:rows.results||[]});
+      }
+      const legacyAssignment=path.match(/^\\/api\\/admin\\/legacy-members\\/([^/]+)$/);
+      if(legacyAssignment&&request.method==="PATCH"){
+        if(!await isBlockAdmin(env,session.user_id))return json({error:"Only the block administrator can map existing accounts."},403);
+        if(!allowedOrigin(request))return json({error:"Origin not allowed."},403);
+        const b=await body(request),userId=decodeURIComponent(legacyAssignment[1]);
+        const unitCode=typeof b?.unit_code==="string"?b.unit_code.trim().toUpperCase():"";
+        if(!/^[A-Z0-9][A-Z0-9._-]{0,31}$/.test(unitCode))return json({error:"Enter a valid unit code (1–32 letters, digits, dots, underscores or hyphens)."},400);
+        const root=await env.DB.prepare("SELECT id FROM workspaces ORDER BY created_at LIMIT 1").first();
+        if(!root)return json({error:"The main workspace could not be found."},404);
+        const legacy=await env.DB.prepare(`SELECT wm.role FROM workspace_members wm
+          LEFT JOIN membership_requests mr ON mr.user_id=wm.user_id
+          WHERE wm.workspace_id=? AND wm.user_id=? AND mr.user_id IS NULL`).bind(root.id,userId).first();
+        if(!legacy)return json({error:"This account is not an unmapped legacy account in the main workspace."},404);
+        const unitWorkspace=await ensureUnitWorkspace(env,unitCode,session.user_id);
+        const reviewedAt=new Date().toISOString();
+        await env.DB.batch([
+          env.DB.prepare(`INSERT INTO workspace_members (workspace_id,user_id,role) VALUES (?,?,'agent')
+            ON CONFLICT(workspace_id,user_id) DO UPDATE SET role=CASE WHEN workspace_members.role IN ('owner','admin') THEN workspace_members.role ELSE 'agent' END`)
+            .bind(unitWorkspace,userId),
+          env.DB.prepare(`DELETE FROM workspace_members WHERE workspace_id=? AND user_id=? AND role NOT IN ('owner','admin')
+            AND EXISTS (SELECT 1 FROM workspace_members WHERE workspace_id=? AND user_id=?)`)
+            .bind(root.id,userId,unitWorkspace,userId),
+          env.DB.prepare(`INSERT INTO membership_requests (user_id,unit_code,status,reviewed_by_user_id,reviewed_at,review_note,updated_at)
+            VALUES (?,?,'approved',?,?,?,?)
+            ON CONFLICT(user_id) DO UPDATE SET unit_code=excluded.unit_code,status='approved',reviewed_by_user_id=excluded.reviewed_by_user_id,reviewed_at=excluded.reviewed_at,review_note=excluded.review_note,updated_at=excluded.updated_at`)
+            .bind(userId,unitCode,session.user_id,reviewedAt,"Mapped from the existing account roster by the block administrator.",reviewedAt)
+        ]);
+        return json({ok:true,user_id:userId,unit_code:unitCode,workspace_id:unitWorkspace});
+      }
       if(path==="/api/membership"&&request.method==="GET"){
         const own=await env.DB.prepare("SELECT full_name,phone,identity_number,unit_code,unit_details,resident_type,payment_method,payment_reference,status,review_note,updated_at FROM membership_requests WHERE user_id=?").bind(session.user_id).first();
         if(["owner","admin"].includes(session.role)){
