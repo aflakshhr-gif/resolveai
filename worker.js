@@ -301,12 +301,15 @@ async function auth(request,env,path) {
       if(!delivery.ok){
         await env.DB.prepare("DELETE FROM password_reset_tokens WHERE token_hash=?").bind(tokenHash).run();
         console.error("ResolveAI password-reset email delivery failed",{status:delivery.status});
-        return json({error:"The reset email could not be sent. Please try again later or contact the site administrator."},502);
+        // Keep the response indistinguishable from an unknown account so the
+        // endpoint cannot be used to enumerate registered email addresses.
+        return json({ok:true,message:genericMessage});
       }
     } catch(error) {
       await env.DB.prepare("DELETE FROM password_reset_tokens WHERE token_hash=?").bind(tokenHash).run();
       console.error("ResolveAI password-reset email request failed",{name:error?.name||"Error"});
-      return json({error:"The reset email could not be sent. Please try again later or contact the site administrator."},502);
+      // Do not disclose whether the address exists if the mail provider fails.
+      return json({ok:true,message:genericMessage});
     }
     return json({ok:true,message:genericMessage});
   }
