@@ -5,6 +5,16 @@ import { useRouter } from "next/navigation";
 
 type Mode = "loading" | "login" | "register" | "setup" | "invite" | "unavailable";
 
+async function readApiJson(response: Response): Promise<any> {
+  const raw = await response.text();
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const status = response.status ? ` (HTTP ${response.status})` : "";
+    throw new Error(`The server returned an unexpected response${status}. Please retry; the sign-in service may be temporarily unavailable.`);
+  }
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("login");
@@ -22,7 +32,7 @@ export default function LoginPage() {
     setInviteToken(token);
     fetch("/api/auth/status", { cache: "no-store", signal: AbortSignal.timeout(12000) })
       .then(async response => {
-        const data = await response.json();
+        const data = await readApiJson(response);
         if (!response.ok) throw new Error(data.error || "Private workspace is not ready.");
         setMode(token ? "invite" : data.setup_required ? "setup" : "login");
       })
