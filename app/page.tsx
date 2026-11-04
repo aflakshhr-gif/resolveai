@@ -41,7 +41,7 @@ function TeamPanel({ workspaceId }: { workspaceId: string }) {
       {error&&<div className="ai-error" role="alert">{error}</div>}
       {inviteUrl&&<div className="invite-result"><b>Invitation link created</b><input readOnly value={inviteUrl}/><button className="outline-btn" onClick={()=>navigator.clipboard.writeText(inviteUrl)}>Copy link</button><small>Share this link only with the invited person. It expires after 7 days and can be used once.</small></div>}
     </div>
-    <div className="rx-info-strip"><ShieldCheck size={18}/><span><b>Private by default</b><small>Invitation links are single-use and expire after seven days.</small></span></div>
+    <div className="rx-info-strip"><Check size={18}/><span><b>Private by default</b><small>Invitation links are single-use and expire after seven days.</small></span></div>
   </div>;
 }
 
