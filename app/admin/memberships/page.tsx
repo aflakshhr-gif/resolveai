@@ -1,0 +1,13 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+
+type Item={user_id:string;email:string;full_name:string;phone:string;identity_number:string;unit_code:string;unit_details:string;resident_type:string;payment_method:string;payment_reference:string;status:string};
+export default function MembershipAdminPage(){
+  const router=useRouter();const [items,setItems]=useState<Item[]>([]);const [error,setError]=useState("");const [busy,setBusy]=useState("");
+  async function load(){const r=await fetch("/api/membership",{cache:"no-store"});const d=await r.json();if(r.status===401){router.replace("/login/");return;}if(!r.ok)throw new Error(d.error||"Could not load requests.");setItems(d.requests||[]);}
+  useEffect(()=>{load().catch(e=>setError(e instanceof Error?e.message:"Could not load requests."));},[]);
+  async function review(id:string,status:"approved"|"rejected"){setBusy(id);setError("");try{const r=await fetch("/api/membership/"+encodeURIComponent(id),{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({status})});const d=await r.json();if(!r.ok)throw new Error(d.error||"Review failed.");await load();}catch(e){setError(e instanceof Error?e.message:"Review failed.");}finally{setBusy("");}}
+  return <main className="auth-shell"><section className="auth-card" style={{maxWidth:900,width:"100%"}}><div className="auth-brand"><span className="auth-mark">✦</span><span>resolve<strong>ai</strong></span></div><div className="auth-eyebrow">BLOCK ADMINISTRATION</div><h1>Unit membership requests</h1><p className="auth-description">Review submitted identity, unit and payment-reference details. Approving a request enables full private workspace access.</p>{error&&<div className="auth-error">{error}</div>}{items.length===0?<p>No pending membership requests.</p>:items.map(x=><article key={x.user_id} style={{border:"1px solid #e5e7eb",borderRadius:12,padding:16,marginTop:14,textAlign:"left"}}><b>{x.full_name||"Name not provided"}</b><p>{x.email} · {x.phone}</p><p>Identity: {x.identity_number} · Unit code: {x.unit_code}</p><p>Unit: {x.unit_details} · Relationship: {x.resident_type}</p><p>Payment: {x.payment_method} · Reference: {x.payment_reference}</p><small>Status: {x.status}</small><div style={{display:"flex",gap:10,marginTop:12}}><button className="auth-submit" disabled={!!busy} onClick={()=>review(x.user_id,"approved")}>{busy===x.user_id?"Please wait…":"Approve membership"}</button><button className="outline-btn" disabled={!!busy} onClick={()=>review(x.user_id,"rejected")}>Reject</button></div></article>)}<div className="auth-footnote"><button onClick={()=>router.replace("/")}>Back to workspace</button></div></section></main>;
+}
