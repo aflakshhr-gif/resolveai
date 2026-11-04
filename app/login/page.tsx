@@ -7,7 +7,7 @@ type Mode = "loading" | "login" | "register" | "setup" | "invite" | "unavailable
 
 export default function LoginPage() {
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>("loading");
+  const [mode, setMode] = useState<Mode>("login");
   const [inviteToken, setInviteToken] = useState("");
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
@@ -20,7 +20,7 @@ export default function LoginPage() {
   useEffect(() => {
     const token = new URLSearchParams(window.location.search).get("invite") || "";
     setInviteToken(token);
-    fetch("/api/auth/status", { cache: "no-store" })
+    fetch("/api/auth/status", { cache: "no-store", signal: AbortSignal.timeout(12000) })
       .then(async response => {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "Private workspace is not ready.");
